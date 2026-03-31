@@ -17,12 +17,15 @@ export function IntelligenceDateRange({
   rangeStart,
   rangeEnd,
   activePreset,
+  /** 既定 `/projects/{id}`。Clarity ページ等は `/projects/{id}/clarity` */
+  navigateBasePath,
 }: {
   projectId: string;
   view: string;
   rangeStart: string;
   rangeEnd: string;
   activePreset: RangeKey | null;
+  navigateBasePath?: string;
 }) {
   const router = useRouter();
   const [fromVal, setFromVal] = useState(rangeStart);
@@ -35,11 +38,12 @@ export function IntelligenceDateRange({
   }, [rangeStart, rangeEnd]);
 
   const viewParam = view === "global" ? undefined : view;
+  const base = navigateBasePath ?? `/projects/${projectId}`;
 
   const goPreset = (r: RangeKey) => {
     setHint(null);
     const q = buildIntelligenceSearchParams({ view: viewParam, range: r });
-    router.push(`/projects/${projectId}${q}`);
+    router.push(`${base}${q}`);
   };
 
   const applyCustom = () => {
@@ -60,7 +64,7 @@ export function IntelligenceDateRange({
       return;
     }
     const q = buildIntelligenceSearchParams({ view: viewParam, from: fromVal, to: toVal });
-    router.push(`/projects/${projectId}${q}`);
+    router.push(`${base}${q}`);
   };
 
   const presetBtn = (r: RangeKey, label: string) => {

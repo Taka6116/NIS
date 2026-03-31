@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import {
   FolderKanban,
   LayoutDashboard,
+  MousePointer2,
   Plug,
   FileBarChart,
   Settings,
@@ -22,6 +23,12 @@ const items = (projectId: string) =>
       icon: LayoutDashboard,
       match: (p: string) =>
         p === `/projects/${projectId}` || p.startsWith(`/projects/${projectId}/insights`),
+    },
+    {
+      href: `/projects/${projectId}/clarity`,
+      label: "Clarity UX",
+      icon: MousePointer2,
+      match: (p: string) => p.startsWith(`/projects/${projectId}/clarity`),
     },
     {
       href: `/projects/${projectId}/reports`,

@@ -7,13 +7,19 @@ import { IntelligenceChartTabs } from "@/components/dashboard/intelligence-chart
 import { IntelligenceDateRange } from "@/components/dashboard/intelligence-date-range";
 import { auth } from "@/auth";
 import { listInsights } from "@/lib/dynamodb/repositories/insights";
+import { isMockDatabase } from "@/lib/dynamodb/client";
 import { getProject } from "@/lib/dynamodb/repositories/projects";
 import {
   getContributingFactorsForDates,
   getMetricsBundleForDates,
   getTimeseriesForDates,
 } from "@/lib/metrics/aggregate";
-import { buildIntelligenceQuery, resolveMetricsWindowOrDefault } from "@/lib/metrics/date-range";
+import {
+  buildIntelligenceQuery,
+  buildMetricsRangeQuery,
+  resolveMetricsWindowOrDefault,
+} from "@/lib/metrics/date-range";
+import { clarityDashboardUrl } from "@/lib/integrations/clarity";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -87,6 +93,27 @@ export default async function IntelligencePage({
         />
       </div>
 
+      {!project.lastSyncAt ? (
+        <Card className="mt-6 border-amber-400/30 bg-amber-500/10">
+          <p className="text-sm text-amber-100/95">
+            KPI は GSC / GA4 を<strong className="text-white"> Sources</strong> の「データ同期を実行」で取り込んだデータから表示されます。初回や環境変数を変えた直後は、必ず同期してください。
+            {isMockDatabase() ? (
+              <>
+                {" "}
+                ローカル（<code className="text-xs text-cyan-200">NIS_USE_MOCK_DB=1</code>
+                ）では開発サーバー再起動でメモリ上の数値が消えるため、再起動後は再度同期が必要です。
+              </>
+            ) : null}
+          </p>
+          <Link
+            href={`/projects/${projectId}/sources`}
+            className="mt-3 inline-block text-sm font-medium text-cyan-300 hover:text-cyan-200"
+          >
+            Sources で同期を開く →
+          </Link>
+        </Card>
+      ) : null}
+
       <div className="mt-8 space-y-6">
         <KpiCards
           sessions={bundle.current.sessions}
@@ -156,6 +183,16 @@ export default async function IntelligencePage({
 
           <Card>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Clarity UX score</h2>
+            <p className="mt-1 text-[11px] text-slate-500">
+              最終同期:{" "}
+              <span className="text-slate-400">{project.lastClaritySyncAt ?? "未同期"}</span>
+              {project.clarityProjectId ? (
+                <>
+                  {" "}
+                  · 表示期間内のスナップショット合算（GSC ほど日次確定ではありません）
+                </>
+              ) : null}
+            </p>
             <div className="mt-4 flex items-end gap-3">
               <div className="text-5xl font-semibold text-emerald-300">{bundle.clarityUx.score}</div>
               <div className="pb-1 text-xs text-slate-400">composite</div>
@@ -173,6 +210,24 @@ export default async function IntelligencePage({
                 <span>Scroll depth (avg)</span>
                 <span>{bundle.clarityUx.scrollDepth.toFixed(1)}</span>
               </div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Link
+                href={`/projects/${projectId}/clarity${buildMetricsRangeQuery(metricsWindow)}`}
+                className="text-xs font-medium text-cyan-300 hover:text-cyan-200"
+              >
+                ページ別の Clarity 内訳を見る →
+              </Link>
+              {project.clarityProjectId ? (
+                <a
+                  href={clarityDashboardUrl(project.clarityProjectId)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-medium text-violet-300 hover:text-violet-200"
+                >
+                  Clarity 公式を開く
+                </a>
+              ) : null}
             </div>
             <div className="mt-4 rounded-lg bg-violet-500/10 p-3 text-xs text-violet-100 ring-1 ring-violet-400/20">
               Clarity の生ヒートマップは API から取得できません。詳細確認は公式ダッシュボードへ遷移してください。

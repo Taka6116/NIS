@@ -124,3 +124,11 @@ export function buildIntelligenceQuery(w: ResolvedMetricsWindow, view?: string):
   }
   return buildIntelligenceSearchParams({ view, range: w.preset ?? "7d" });
 }
+
+/** Clarity 詳細ページなど（view なし）の `?from=&to=` / `?range=` */
+export function buildMetricsRangeQuery(w: ResolvedMetricsWindow): string {
+  if (w.source === "custom") {
+    return buildIntelligenceSearchParams({ from: w.start, to: w.end });
+  }
+  return buildIntelligenceSearchParams({ range: w.preset ?? "7d" });
+}

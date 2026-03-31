@@ -73,27 +73,6 @@ export async function createProject(input: CreateProjectInput): Promise<ProjectR
   return row;
 }
 
-export async function ensureDefaultProject(): Promise<ProjectRecord | null> {
-  const defaults = {
-    projectName: process.env.NIS_DEFAULT_PROJECT_NAME,
-    domain: process.env.NIS_DEFAULT_DOMAIN,
-    gscPropertyUrl: process.env.NIS_DEFAULT_GSC_PROPERTY_URL,
-    ga4PropertyId: process.env.NIS_DEFAULT_GA4_PROPERTY_ID,
-  };
-  if (!defaults.projectName || !defaults.domain) return null;
-
-  const existing = await listProjects();
-  if (existing.length > 0) return existing[0];
-
-  return createProject({
-    projectName: defaults.projectName,
-    domain: defaults.domain,
-    gscPropertyUrl: defaults.gscPropertyUrl ?? "",
-    ga4PropertyId: defaults.ga4PropertyId ?? "",
-    clarityProjectId: process.env.NIS_DEFAULT_CLARITY_PROJECT_ID,
-  });
-}
-
 export async function updateProjectSyncMeta(
   projectId: string,
   partial: Partial<Pick<ProjectRecord, "lastSyncAt" | "lastGscSyncAt" | "lastGa4SyncAt" | "lastClaritySyncAt">>,
@@ -134,6 +113,8 @@ export async function updateProjectCredentials(
   patch: Partial<
     Pick<
       ProjectRecord,
+      | "projectName"
+      | "domain"
       | "clarityProjectId"
       | "clarityApiTokenEncrypted"
       | "gscPropertyUrl"
@@ -171,4 +152,55 @@ export async function updateProjectCredentials(
       ExpressionAttributeValues: values,
     }),
   );
+}
+
+/** シングルテナント時、環境変数の既定値と DB 上のプロジェクトを揃える */
+async function reconcileSingleTenantProjectFromEnv(existing: ProjectRecord[]): Promise<void> {
+  const projectName = process.env.NIS_DEFAULT_PROJECT_NAME;
+  const domain = process.env.NIS_DEFAULT_DOMAIN;
+  const gscPropertyUrl = process.env.NIS_DEFAULT_GSC_PROPERTY_URL;
+  const ga4PropertyId = process.env.NIS_DEFAULT_GA4_PROPERTY_ID;
+  const clarityProjectId = process.env.NIS_DEFAULT_CLARITY_PROJECT_ID;
+  if (!projectName || !domain) return;
+  if (existing.length !== 1) return;
+
+  const p = existing[0];
+  const patch: Partial<
+    Pick<
+      ProjectRecord,
+      "projectName" | "domain" | "gscPropertyUrl" | "ga4PropertyId" | "clarityProjectId"
+    >
+  > = {};
+  if (gscPropertyUrl && gscPropertyUrl !== p.gscPropertyUrl) patch.gscPropertyUrl = gscPropertyUrl;
+  if (ga4PropertyId && ga4PropertyId !== p.ga4PropertyId) patch.ga4PropertyId = ga4PropertyId;
+  if (domain !== p.domain) patch.domain = domain;
+  if (projectName !== p.projectName) patch.projectName = projectName;
+  if (clarityProjectId && clarityProjectId !== p.clarityProjectId) {
+    patch.clarityProjectId = clarityProjectId;
+  }
+  if (Object.keys(patch).length > 0) await updateProjectCredentials(p.projectId, patch);
+}
+
+export async function ensureDefaultProject(): Promise<ProjectRecord | null> {
+  const defaults = {
+    projectName: process.env.NIS_DEFAULT_PROJECT_NAME,
+    domain: process.env.NIS_DEFAULT_DOMAIN,
+    gscPropertyUrl: process.env.NIS_DEFAULT_GSC_PROPERTY_URL,
+    ga4PropertyId: process.env.NIS_DEFAULT_GA4_PROPERTY_ID,
+  };
+  if (!defaults.projectName || !defaults.domain) return null;
+
+  const existing = await listProjects();
+  if (existing.length > 0) {
+    await reconcileSingleTenantProjectFromEnv(existing);
+    return (await getProject(existing[0].projectId)) ?? existing[0];
+  }
+
+  return createProject({
+    projectName: defaults.projectName,
+    domain: defaults.domain,
+    gscPropertyUrl: defaults.gscPropertyUrl ?? "",
+    ga4PropertyId: defaults.ga4PropertyId ?? "",
+    clarityProjectId: process.env.NIS_DEFAULT_CLARITY_PROJECT_ID,
+  });
 }
