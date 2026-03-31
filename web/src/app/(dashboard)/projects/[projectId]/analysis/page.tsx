@@ -57,7 +57,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ proje
         <Card className="mt-8 border-dashed border-white/20 bg-white/[0.02] p-10 text-center">
           <p className="text-sm font-medium text-slate-200">まだレポートがありません</p>
           <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
-            データ同期後に「新しい分析を実行」で Gemini が 4 段階インサイトを生成し、ここに履歴が並びます。
+            データ同期後に「新しい分析を実行」で Gemini または Claude（Lambda）が 4 段階インサイトを生成し、ここに履歴が並びます。
           </p>
           <Link href={`/projects/${projectId}/insights/generate`} className="mt-6 inline-block">
             <Button className="rounded-xl">分析を開始</Button>
@@ -84,6 +84,14 @@ export default async function AnalysisPage({ params }: { params: Promise<{ proje
                           <Badge tone="neutral" className="normal-case text-[10px]">
                             {i.type}
                           </Badge>
+                          {i.modelProvider ? (
+                            <Badge
+                              tone={i.modelProvider === "claude" ? "ai" : "success"}
+                              className="normal-case text-[10px]"
+                            >
+                              {i.modelProvider === "claude" ? "Claude" : "Gemini"}
+                            </Badge>
+                          ) : null}
                           {i.pipeline ? (
                             <Badge tone="ai" className="normal-case text-[10px]">
                               4 段階パイプライン

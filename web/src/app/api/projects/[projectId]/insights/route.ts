@@ -20,6 +20,7 @@ export async function GET(
       findings: i.findings,
       topPriority: i.topPriority,
       pipeline: i.pipeline,
+      modelProvider: i.modelProvider,
     })),
   });
 }

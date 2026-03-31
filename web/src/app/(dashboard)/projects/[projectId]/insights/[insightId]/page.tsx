@@ -24,7 +24,9 @@ export default async function InsightDetailPage({
     <main className="min-w-0 flex-1 p-8">
       <AppHeader
         title="Insight detail"
-        subtitle={`${insight.type} — ${insight.period.start} 〜 ${insight.period.end}`}
+        subtitle={`${insight.type} — ${insight.period.start} 〜 ${insight.period.end}${
+          insight.modelProvider ? ` — ${insight.modelProvider === "claude" ? "Claude (Lambda)" : "Gemini"}${insight.modelVersion ? ` · ${insight.modelVersion}` : ""}` : ""
+        }`}
         userEmail={session?.user?.email}
       />
       <Card className="mt-8 glow-border">

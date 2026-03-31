@@ -160,6 +160,8 @@ export type InsightRecord = {
   topPriority: { action: string; reason: string };
   /** 4段階パイプライン（新規生成で必須。旧レコードは未設定） */
   pipeline?: InsightPipeline;
+  /** LLM 経路（未保存の旧レコードは未設定） */
+  modelProvider?: "gemini" | "claude";
   rawPrompt?: string;
   modelVersion?: string;
   tokenUsage?: number;
