@@ -22,9 +22,14 @@ export function SyncButton({ projectId }: { projectId: string }) {
       }
       const r = body.result;
       setState("done");
-      setResult(
-        `GSC: ${r.gscCount} 行 / GA4: ${r.ga4Count} 行 / Clarity: ${r.clarityCount} 行`,
-      );
+
+      let clarityMsg = `Clarity: ${r.clarityCount} 行`;
+      if (r.claritySkipped) {
+        clarityMsg = `Clarity: スキップ（${r.claritySkipReason ?? "未設定"}）`;
+      } else if (r.clarityError) {
+        clarityMsg = `Clarity: エラー — ${r.clarityError}`;
+      }
+      setResult(`GSC: ${r.gscCount} 行 / GA4: ${r.ga4Count} 行 / ${clarityMsg}`);
     } catch (e) {
       setState("error");
       setResult(e instanceof Error ? e.message : "Network error");

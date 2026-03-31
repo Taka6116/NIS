@@ -2,10 +2,29 @@ import { fetchClarityLiveInsights, clarityDashboardUrl } from "@/lib/integration
 import { fetchGa4DailyRows } from "@/lib/integrations/ga4";
 import { fetchGscDailyRows } from "@/lib/integrations/gsc";
 import { putClarityRows, putGa4Rows, putGscRows } from "@/lib/dynamodb/repositories/metrics";
-import { getProject, updateProjectSyncMeta } from "@/lib/dynamodb/repositories/projects";
+import {
+  ensureDefaultProject,
+  getProject,
+  updateProjectSyncMeta,
+} from "@/lib/dynamodb/repositories/projects";
 import { format, subDays } from "date-fns";
 
-export async function syncProjectData(projectId: string, opts?: { days?: number; clarityToken?: string }) {
+export type SyncResult = {
+  gscCount: number;
+  ga4Count: number;
+  clarityCount: number;
+  claritySkipped: boolean;
+  claritySkipReason?: string;
+  clarityError?: string;
+  clarityUrl: string | null;
+};
+
+export async function syncProjectData(
+  projectId: string,
+  opts?: { days?: number; clarityToken?: string },
+): Promise<SyncResult> {
+  await ensureDefaultProject();
+
   const project = await getProject(projectId);
   if (!project) throw new Error("Project not found");
 
@@ -38,13 +57,38 @@ export async function syncProjectData(projectId: string, opts?: { days?: number;
     lastSyncAt: now,
   });
 
-  let clarityRows: Awaited<ReturnType<typeof fetchClarityLiveInsights>> = [];
+  const clarityPid =
+    project.clarityProjectId || process.env.NIS_DEFAULT_CLARITY_PROJECT_ID || "";
   const token =
     opts?.clarityToken ?? process.env.CLARITY_API_TOKEN ?? project.clarityApiTokenEncrypted ?? "";
-  if (project.clarityProjectId && token) {
+
+  if (!clarityPid) {
+    return {
+      gscCount: gscRows.length,
+      ga4Count: ga4Rows.length,
+      clarityCount: 0,
+      claritySkipped: true,
+      claritySkipReason: "Clarity Project ID が未設定です",
+      clarityUrl: null,
+    };
+  }
+  if (!token) {
+    return {
+      gscCount: gscRows.length,
+      ga4Count: ga4Rows.length,
+      clarityCount: 0,
+      claritySkipped: true,
+      claritySkipReason: "Clarity API トークンが未設定です",
+      clarityUrl: clarityDashboardUrl(clarityPid),
+    };
+  }
+
+  let clarityRows: Awaited<ReturnType<typeof fetchClarityLiveInsights>> = [];
+  let clarityError: string | undefined;
+  try {
     clarityRows = await fetchClarityLiveInsights({
       projectId,
-      clarityProjectId: project.clarityProjectId,
+      clarityProjectId: clarityPid,
       token,
       numOfDays: 1,
     });
@@ -53,12 +97,16 @@ export async function syncProjectData(projectId: string, opts?: { days?: number;
       lastClaritySyncAt: new Date().toISOString(),
       lastSyncAt: new Date().toISOString(),
     });
+  } catch (e) {
+    clarityError = e instanceof Error ? e.message : "Unknown Clarity error";
   }
 
   return {
     gscCount: gscRows.length,
     ga4Count: ga4Rows.length,
     clarityCount: clarityRows.length,
-    clarityUrl: project.clarityProjectId ? clarityDashboardUrl(project.clarityProjectId) : null,
+    claritySkipped: false,
+    clarityError,
+    clarityUrl: clarityDashboardUrl(clarityPid),
   };
 }
