@@ -19,6 +19,7 @@ export async function GET(
       summary: i.summary,
       findings: i.findings,
       topPriority: i.topPriority,
+      pipeline: i.pipeline,
     })),
   });
 }

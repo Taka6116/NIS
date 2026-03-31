@@ -164,8 +164,12 @@ export default async function IntelligencePage({
         ) : (
           <Card>
             <p className="text-sm text-slate-300">
-              インサイトがまだありません。右上の <span className="font-semibold text-white">Execute report</span> またはサイドバーの
-              New Analysis から生成できます。
+              インサイトがまだありません。サイドバーの{" "}
+              <Link href={`/projects/${projectId}/analysis`} className="font-semibold text-cyan-200 hover:text-cyan-100">
+                分析
+              </Link>
+              で一覧・生成に進むか、右上の <span className="font-semibold text-white">Execute report</span> または{" "}
+              <span className="font-semibold text-white">New Analysis</span> から生成できます。
             </p>
           </Card>
         )}

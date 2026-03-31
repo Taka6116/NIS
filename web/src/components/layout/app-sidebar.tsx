@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import {
+  BarChart3,
   FolderKanban,
   Globe,
   LayoutDashboard,
@@ -24,8 +25,15 @@ const items = (projectId: string) =>
       href: `/projects/${projectId}`,
       label: "Intelligence",
       icon: LayoutDashboard,
+      match: (p: string) => p === `/projects/${projectId}`,
+    },
+    {
+      href: `/projects/${projectId}/analysis`,
+      label: "分析",
+      icon: BarChart3,
       match: (p: string) =>
-        p === `/projects/${projectId}` || p.startsWith(`/projects/${projectId}/insights`),
+        p.startsWith(`/projects/${projectId}/analysis`) ||
+        p.startsWith(`/projects/${projectId}/insights`),
     },
     {
       href: `/projects/${projectId}/seo`,

@@ -102,6 +102,54 @@ export type InsightFinding = {
   supportingData?: Record<string, unknown>;
 };
 
+/** ①現状整理（事実のみ。解釈・原因・推奨を書かない） */
+export type InsightFact = {
+  id: string;
+  statement: string;
+  metricRef?: string;
+  valueText?: string;
+  source?: "gsc" | "ga4" | "clarity" | "rule";
+};
+
+/** ②課題 */
+export type InsightIssue = {
+  id: string;
+  severity: "high" | "medium" | "low";
+  title: string;
+  description: string;
+  relatedFactIds: string[];
+  category: "seo" | "traffic" | "ux" | "conversion";
+};
+
+/** ③示唆・仮説 */
+export type InsightHypothesisItem = {
+  id: string;
+  issueId: string;
+  statement: string;
+  /** データが示す事実と、解釈・仮説の区別 */
+  dataSupport: string;
+  confidence: "high" | "medium" | "low";
+};
+
+/** ④打ち手 */
+export type InsightActionItem = {
+  id: string;
+  hypothesisId: string;
+  issueId: string;
+  title: string;
+  priority: "high" | "medium" | "low";
+  effort: string;
+  expectedImpact: string;
+  steps: string[];
+};
+
+export type InsightPipeline = {
+  facts: InsightFact[];
+  issues: InsightIssue[];
+  hypotheses: InsightHypothesisItem[];
+  actions: InsightActionItem[];
+};
+
 export type InsightRecord = {
   projectId: string;
   sk: string;
@@ -110,6 +158,8 @@ export type InsightRecord = {
   summary: string;
   findings: InsightFinding[];
   topPriority: { action: string; reason: string };
+  /** 4段階パイプライン（新規生成で必須。旧レコードは未設定） */
+  pipeline?: InsightPipeline;
   rawPrompt?: string;
   modelVersion?: string;
   tokenUsage?: number;
