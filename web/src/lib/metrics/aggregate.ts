@@ -16,7 +16,19 @@ function inRange(dateStr: string, start: string, end: string) {
   return dateStr >= start && dateStr <= end;
 }
 
-async function loadGsc(projectId: string, start: string, end: string): Promise<GscDailyRow[]> {
+function isGscQueryRow(r: GscDailyRow): boolean {
+  return r.rowType === "query" || r.rowType === undefined;
+}
+
+function isGa4MainRow(r: Ga4DailyRow): boolean {
+  return r.rowType === "main" || r.rowType === undefined;
+}
+
+function isClaritySummary(r: ClarityDailyRow): boolean {
+  return r.rowKind === "summary" || r.url === "(project-summary)";
+}
+
+async function loadGscForDates(projectId: string, start: string, end: string): Promise<GscDailyRow[]> {
   const out: GscDailyRow[] = [];
   let d = parseISO(start);
   const endDate = parseISO(end);
@@ -29,21 +41,34 @@ async function loadGsc(projectId: string, start: string, end: string): Promise<G
   return out.filter((r) => inRange(r.date, start, end));
 }
 
-async function loadGa4(projectId: string, start: string, end: string): Promise<Ga4DailyRow[]> {
+export async function loadGscRowsForDates(projectId: string, start: string, end: string): Promise<GscDailyRow[]> {
+  return loadGscForDates(projectId, start, end);
+}
+
+async function loadGa4ForDates(projectId: string, start: string, end: string): Promise<Ga4DailyRow[]> {
   const all = await queryGa4ByProject(projectId);
   return all.filter((r) => inRange(r.date, start, end));
 }
 
-async function loadClarity(projectId: string, start: string, end: string): Promise<ClarityDailyRow[]> {
+export async function loadGa4RowsForDates(projectId: string, start: string, end: string): Promise<Ga4DailyRow[]> {
+  return loadGa4ForDates(projectId, start, end);
+}
+
+async function loadClarityForDates(projectId: string, start: string, end: string): Promise<ClarityDailyRow[]> {
   const all = await queryClarityByProject(projectId);
   return all.filter((r) => inRange(r.date, start, end));
 }
 
+export async function loadClarityRowsForDates(projectId: string, start: string, end: string): Promise<ClarityDailyRow[]> {
+  return loadClarityForDates(projectId, start, end);
+}
+
 function aggregateGsc(rows: GscDailyRow[]) {
+  const q = rows.filter(isGscQueryRow);
   let clicks = 0;
   let impressions = 0;
   let weightedPos = 0;
-  for (const r of rows) {
+  for (const r of q) {
     clicks += r.clicks;
     impressions += r.impressions;
     weightedPos += r.position * (r.impressions || 0);
@@ -54,42 +79,71 @@ function aggregateGsc(rows: GscDailyRow[]) {
 }
 
 function aggregateGa4(rows: Ga4DailyRow[]) {
+  const m = rows.filter(isGa4MainRow);
   let sessions = 0;
   let users = 0;
   let conversions = 0;
   let bounceWeighted = 0;
-  for (const r of rows) {
+  let engageWeighted = 0;
+  let engagedSessions = 0;
+  let durWeighted = 0;
+  for (const r of m) {
     sessions += r.sessions;
     users += r.activeUsers;
     conversions += r.conversions;
     bounceWeighted += r.bounceRate * r.sessions;
+    const er = r.engagementRate ?? 0;
+    engageWeighted += er * r.sessions;
+    engagedSessions += r.engagedSessions ?? 0;
+    durWeighted += (r.userEngagementDuration ?? 0) * r.sessions;
   }
   const bounceRate = sessions > 0 ? bounceWeighted / sessions : 0;
-  return { sessions, users, conversions, bounceRate };
+  const engagementRateAvg = sessions > 0 ? engageWeighted / sessions : 0;
+  const avgUserEngagementDuration = sessions > 0 ? durWeighted / sessions : 0;
+  return {
+    sessions,
+    users,
+    conversions,
+    bounceRate,
+    engagementRateAvg,
+    engagedSessions,
+    avgUserEngagementDuration,
+  };
 }
 
-function aggregateClarityUx(rows: ClarityDailyRow[]) {
-  if (!rows.length) {
+export type ClarityUxAggregate = {
+  deadClickRate: number;
+  rageClickRate: number;
+  scrollDepth: number;
+  score: number;
+  quickbackCount: number;
+  excessiveScrollCount: number;
+  botTrafficRate: number;
+  totalPageviews: number;
+  distinctUsers: number;
+  pagesPerSession: number;
+};
+
+function aggregateClarityUx(rows: ClarityDailyRow[]): ClarityUxAggregate {
+  const summary = rows.find(isClaritySummary);
+  if (!summary) {
     return {
       deadClickRate: 0,
       rageClickRate: 0,
       scrollDepth: 0,
       score: 0,
+      quickbackCount: 0,
+      excessiveScrollCount: 0,
+      botTrafficRate: 0,
+      totalPageviews: 0,
+      distinctUsers: 0,
+      pagesPerSession: 0,
     };
   }
-  let traffic = 0;
-  let dead = 0;
-  let rage = 0;
-  let scroll = 0;
-  for (const r of rows) {
-    traffic += r.traffic || 1;
-    dead += r.deadClickCount;
-    rage += r.rageClickCount;
-    scroll += r.scrollDepth;
-  }
-  const deadClickRate = traffic > 0 ? dead / traffic : 0;
-  const rageClickRate = traffic > 0 ? rage / traffic : 0;
-  const scrollDepth = scroll / rows.length;
+  const traffic = Math.max(1, summary.traffic || 1);
+  const deadClickRate = summary.deadClickCount / traffic;
+  const rageClickRate = summary.rageClickCount / traffic;
+  const scrollDepth = summary.scrollDepth;
   const score = Math.max(
     0,
     Math.min(
@@ -97,7 +151,22 @@ function aggregateClarityUx(rows: ClarityDailyRow[]) {
       Math.round(100 - deadClickRate * 200 - rageClickRate * 300 + scrollDepth * 0.2),
     ),
   );
-  return { deadClickRate, rageClickRate, scrollDepth, score };
+  const bots = summary.botSessionCount ?? 0;
+  const humanSessions = summary.traffic || 0;
+  const botTrafficRate = bots + humanSessions > 0 ? bots / (bots + humanSessions) : 0;
+
+  return {
+    deadClickRate,
+    rageClickRate,
+    scrollDepth,
+    score,
+    quickbackCount: summary.quickbackCount ?? 0,
+    excessiveScrollCount: summary.excessiveScrollCount ?? 0,
+    botTrafficRate,
+    totalPageviews: summary.totalPageviews ?? 0,
+    distinctUsers: summary.distinctUsers ?? 0,
+    pagesPerSession: summary.pagesPerSession ?? 0,
+  };
 }
 
 export type KpiSnapshot = {
@@ -105,6 +174,9 @@ export type KpiSnapshot = {
   users: number;
   conversions: number;
   bounceRate: number;
+  engagementRate: number;
+  engagedSessions: number;
+  avgUserEngagementDuration: number;
   impressions: number;
   clicks: number;
   ctr: number;
@@ -119,11 +191,11 @@ async function buildMetricsBundleFromSpans(
   prevEnd: string,
 ) {
   const [gscCur, gscPrev, ga4Cur, ga4Prev, clarityCur] = await Promise.all([
-    loadGsc(projectId, start, end),
-    loadGsc(projectId, prevStart, prevEnd),
-    loadGa4(projectId, start, end),
-    loadGa4(projectId, prevStart, prevEnd),
-    loadClarity(projectId, start, end),
+    loadGscForDates(projectId, start, end),
+    loadGscForDates(projectId, prevStart, prevEnd),
+    loadGa4ForDates(projectId, start, end),
+    loadGa4ForDates(projectId, prevStart, prevEnd),
+    loadClarityForDates(projectId, start, end),
   ]);
 
   const gC = aggregateGsc(gscCur);
@@ -137,6 +209,9 @@ async function buildMetricsBundleFromSpans(
     users: aC.users,
     conversions: aC.conversions,
     bounceRate: aC.bounceRate,
+    engagementRate: aC.engagementRateAvg,
+    engagedSessions: aC.engagedSessions,
+    avgUserEngagementDuration: aC.avgUserEngagementDuration,
     impressions: gC.impressions,
     clicks: gC.clicks,
     ctr: gC.ctr,
@@ -148,6 +223,9 @@ async function buildMetricsBundleFromSpans(
     users: aP.users,
     conversions: aP.conversions,
     bounceRate: aP.bounceRate,
+    engagementRate: aP.engagementRateAvg,
+    engagedSessions: aP.engagedSessions,
+    avgUserEngagementDuration: aP.avgUserEngagementDuration,
     impressions: gP.impressions,
     clicks: gP.clicks,
     ctr: gP.ctr,
@@ -164,6 +242,7 @@ async function buildMetricsBundleFromSpans(
     users: pct(current.users, previous.users),
     conversions: pct(current.conversions, previous.conversions),
     bounceRate: current.bounceRate - previous.bounceRate,
+    engagementRate: current.engagementRate - previous.engagementRate,
     impressions: pct(current.impressions, previous.impressions),
     clicks: pct(current.clicks, previous.clicks),
     ctr: (current.ctr - previous.ctr) * 100,
@@ -195,6 +274,30 @@ export async function getMetricsBundle(projectId: string, range: RangeKey) {
   return buildMetricsBundleFromSpans(projectId, start, end, prevStart, prevEnd);
 }
 
+export type ChannelMixRow = { name: string; value: number; sessions: number; conversions: number };
+
+/** GA4 チャネル（Default channel group）× 期間の集計 */
+export async function getChannelMixForDates(projectId: string, start: string, end: string): Promise<ChannelMixRow[]> {
+  const rows = (await loadGa4ForDates(projectId, start, end)).filter((r) => r.rowType === "channel");
+  const by = new Map<string, { sessions: number; conversions: number }>();
+  for (const r of rows) {
+    const k = r.channelGroup ?? "(not set)";
+    const cur = by.get(k) ?? { sessions: 0, conversions: 0 };
+    cur.sessions += r.sessions;
+    cur.conversions += r.conversions;
+    by.set(k, cur);
+  }
+  const totalSessions = [...by.values()].reduce((s, v) => s + v.sessions, 0) || 1;
+  return [...by.entries()]
+    .map(([name, v]) => ({
+      name,
+      sessions: v.sessions,
+      conversions: v.conversions,
+      value: Math.round((v.sessions / totalSessions) * 1000) / 10,
+    }))
+    .sort((a, b) => b.sessions - a.sessions);
+}
+
 export type ContributingRow = {
   label: string;
   volume: number;
@@ -203,7 +306,7 @@ export type ContributingRow = {
 };
 
 export async function getContributingFactorsForDates(projectId: string, start: string, end: string): Promise<ContributingRow[]> {
-  const gscRows = await loadGsc(projectId, start, end);
+  const gscRows = (await loadGscForDates(projectId, start, end)).filter(isGscQueryRow);
   const byQuery = new Map<string, { clicks: number; impressions: number }>();
   for (const r of gscRows) {
     const q = r.query ?? "(not set)";

@@ -17,7 +17,7 @@ export async function runInsightGeneration(projectId: string): Promise<InsightRe
   });
 
   const clarityNote = bundle.clarityUx
-    ? `推定UXスコア ${bundle.clarityUx.score}。Dead click 率 ${(bundle.clarityUx.deadClickRate * 100).toFixed(2)}%、Rage ${(bundle.clarityUx.rageClickRate * 100).toFixed(2)}%、平均 Scroll depth ${bundle.clarityUx.scrollDepth.toFixed(1)}。`
+    ? `推定UXスコア ${bundle.clarityUx.score}。Dead click 率 ${(bundle.clarityUx.deadClickRate * 100).toFixed(2)}%、Rage ${(bundle.clarityUx.rageClickRate * 100).toFixed(2)}%、Scroll depth ${bundle.clarityUx.scrollDepth.toFixed(1)}、即戻り ${bundle.clarityUx.quickbackCount}、過剰スクロール ${bundle.clarityUx.excessiveScrollCount}、ボット率 ${(bundle.clarityUx.botTrafficRate * 100).toFixed(1)}%。`
     : undefined;
 
   const { payload, raw, model } = await generateInsightJson({

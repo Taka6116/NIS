@@ -3,13 +3,17 @@ import { formatPercentChange } from "@/lib/utils";
 
 type Props = {
   sessions: number;
+  users: number;
   conversions: number;
   impressions: number;
+  clicks: number;
   avgPosition: number;
   change: {
     sessions: number;
+    users: number;
     conversions: number;
     impressions: number;
+    clicks: number;
     avgPosition: number;
   };
 };
@@ -36,28 +40,54 @@ function Spark({ positive }: { positive: boolean }) {
   );
 }
 
-export function KpiCards({ sessions, conversions, impressions, avgPosition, change }: Props) {
+export function KpiCards({
+  sessions,
+  users,
+  conversions,
+  impressions,
+  clicks,
+  avgPosition,
+  change,
+}: Props) {
   const items = [
     {
-      title: "Sessions",
+      titleEn: "Sessions",
+      titleJa: "セッション数",
       value: sessions.toLocaleString(),
       delta: change.sessions,
       positive: change.sessions >= 0,
     },
     {
-      title: "Conversion (events)",
+      titleEn: "Users",
+      titleJa: "アクティブユーザー",
+      value: users.toLocaleString(),
+      delta: change.users,
+      positive: change.users >= 0,
+    },
+    {
+      titleEn: "Conversions",
+      titleJa: "コンバージョン",
       value: String(conversions),
       delta: change.conversions,
       positive: change.conversions >= 0,
     },
     {
-      title: "Impressions",
+      titleEn: "Impressions",
+      titleJa: "検索表示回数",
       value: impressions.toLocaleString(),
       delta: change.impressions,
       positive: change.impressions >= 0,
     },
     {
-      title: "Avg. position",
+      titleEn: "Clicks",
+      titleJa: "検索クリック数",
+      value: clicks.toLocaleString(),
+      delta: change.clicks,
+      positive: change.clicks >= 0,
+    },
+    {
+      titleEn: "Avg. position",
+      titleJa: "平均掲載順位",
       value: avgPosition.toFixed(1),
       delta: -change.avgPosition,
       positive: change.avgPosition <= 0,
@@ -65,10 +95,11 @@ export function KpiCards({ sessions, conversions, impressions, avgPosition, chan
   ];
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
       {items.map((k) => (
-        <Card key={k.title} className="glow-border/50 relative overflow-hidden">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{k.title}</div>
+        <Card key={k.titleEn} className="glow-border/50 relative overflow-hidden">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{k.titleEn}</div>
+          <div className="mt-0.5 text-xs font-medium text-slate-300">{k.titleJa}</div>
           <div className="mt-2 flex items-baseline justify-between gap-3">
             <div className="text-2xl font-semibold text-white">{k.value}</div>
             <div

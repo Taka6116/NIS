@@ -29,6 +29,9 @@ export async function GET(
       ctr: bundle.current.ctr,
       position: bundle.current.avgPosition,
       bounceRate: bundle.current.bounceRate,
+      engagementRate: bundle.current.engagementRate,
+      engagedSessions: bundle.current.engagedSessions,
+      avgUserEngagementDuration: bundle.current.avgUserEngagementDuration,
     },
     previous: {
       sessions: bundle.previous.sessions,
@@ -39,6 +42,9 @@ export async function GET(
       ctr: bundle.previous.ctr,
       position: bundle.previous.avgPosition,
       bounceRate: bundle.previous.bounceRate,
+      engagementRate: bundle.previous.engagementRate,
+      engagedSessions: bundle.previous.engagedSessions,
+      avgUserEngagementDuration: bundle.previous.avgUserEngagementDuration,
     },
     change: {
       sessions: bundle.change.sessions,
@@ -49,6 +55,7 @@ export async function GET(
       ctr: bundle.change.ctr,
       position: bundle.change.avgPosition,
       bounceRate: bundle.change.bounceRate,
+      engagementRate: bundle.change.engagementRate,
     },
     freshnessNote: bundle.freshnessNote,
     clarityUx: bundle.clarityUx,

@@ -3,9 +3,10 @@
   "private": true,
   "description": "NIS — アプリ本体は web/ にあります。ここから npm run dev 可能です。",
   "scripts": {
+    "postinstall": "npm install --prefix web",
     "dev": "npm --prefix web run dev",
     "dev:webpack": "npm --prefix web run dev:webpack",
-    "build": "npm --prefix web run build",
+    "build": "npm install --prefix web && npm --prefix web run build",
     "start": "npm --prefix web run start",
     "lint": "npm --prefix web run lint",
     "install:all": "npm --prefix web install"

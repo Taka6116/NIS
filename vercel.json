@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm install --prefix web",
+  "buildCommand": "npm run build --prefix web",
+  "crons": [
+    {
+      "path": "/api/cron/sync-data",
+      "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/cron/generate-insights",
+      "schedule": "0 22 * * 0"
+    }
+  ]
+}

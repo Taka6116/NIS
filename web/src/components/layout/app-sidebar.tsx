@@ -3,12 +3,15 @@
 import { cn } from "@/lib/utils";
 import {
   FolderKanban,
+  Globe,
   LayoutDashboard,
   MousePointer2,
   Plug,
   FileBarChart,
+  Search,
   Settings,
   Sparkles,
+  TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -25,10 +28,28 @@ const items = (projectId: string) =>
         p === `/projects/${projectId}` || p.startsWith(`/projects/${projectId}/insights`),
     },
     {
+      href: `/projects/${projectId}/seo`,
+      label: "SEO パフォーマンス",
+      icon: Search,
+      match: (p: string) => p.startsWith(`/projects/${projectId}/seo`),
+    },
+    {
+      href: `/projects/${projectId}/traffic`,
+      label: "トラフィック分析",
+      icon: TrendingUp,
+      match: (p: string) => p.startsWith(`/projects/${projectId}/traffic`),
+    },
+    {
       href: `/projects/${projectId}/clarity`,
-      label: "Clarity UX",
+      label: "UX / Clarity",
       icon: MousePointer2,
       match: (p: string) => p.startsWith(`/projects/${projectId}/clarity`),
+    },
+    {
+      href: `/projects/${projectId}/devices`,
+      label: "デバイス & 地域",
+      icon: Globe,
+      match: (p: string) => p.startsWith(`/projects/${projectId}/devices`),
     },
     {
       href: `/projects/${projectId}/reports`,

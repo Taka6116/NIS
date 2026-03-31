@@ -90,7 +90,7 @@ export async function syncProjectData(
       projectId,
       clarityProjectId: clarityPid,
       token,
-      numOfDays: 1,
+      numOfDays: 3,
     });
     await putClarityRows(clarityRows);
     await updateProjectSyncMeta(projectId, {

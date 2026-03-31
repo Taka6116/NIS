@@ -10,10 +10,12 @@ import { listInsights } from "@/lib/dynamodb/repositories/insights";
 import { isMockDatabase } from "@/lib/dynamodb/client";
 import { getProject } from "@/lib/dynamodb/repositories/projects";
 import {
+  getChannelMixForDates,
   getContributingFactorsForDates,
   getMetricsBundleForDates,
   getTimeseriesForDates,
 } from "@/lib/metrics/aggregate";
+import { ChannelMixPie } from "@/components/dashboard/channel-mix-pie";
 import {
   buildIntelligenceQuery,
   buildMetricsRangeQuery,
@@ -42,11 +44,12 @@ export default async function IntelligencePage({
   });
 
   const session = await auth();
-  const [bundle, contributors, insights, series] = await Promise.all([
+  const [bundle, contributors, insights, series, channelMix] = await Promise.all([
     getMetricsBundleForDates(projectId, metricsWindow.start, metricsWindow.end),
     getContributingFactorsForDates(projectId, metricsWindow.start, metricsWindow.end),
     listInsights(projectId, 3),
     getTimeseriesForDates(projectId, "sessions", metricsWindow.start, metricsWindow.end),
+    getChannelMixForDates(projectId, metricsWindow.start, metricsWindow.end),
   ]);
 
   const latest = insights[0];
@@ -117,13 +120,17 @@ export default async function IntelligencePage({
       <div className="mt-8 space-y-6">
         <KpiCards
           sessions={bundle.current.sessions}
+          users={bundle.current.users}
           conversions={bundle.current.conversions}
           impressions={bundle.current.impressions}
+          clicks={bundle.current.clicks}
           avgPosition={bundle.current.avgPosition}
           change={{
             sessions: bundle.change.sessions,
+            users: bundle.change.users,
             conversions: bundle.change.conversions,
             impressions: bundle.change.impressions,
+            clicks: bundle.change.clicks,
             avgPosition: bundle.change.avgPosition,
           }}
         />
@@ -183,6 +190,7 @@ export default async function IntelligencePage({
 
           <Card>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Clarity UX score</h2>
+            <p className="mt-0.5 text-xs text-slate-400">UX 総合スコア — 100 点満点・高いほど良好</p>
             <p className="mt-1 text-[11px] text-slate-500">
               最終同期:{" "}
               <span className="text-slate-400">{project.lastClaritySyncAt ?? "未同期"}</span>
@@ -199,15 +207,24 @@ export default async function IntelligencePage({
             </div>
             <div className="mt-4 space-y-2 text-sm text-slate-300">
               <div className="flex justify-between">
-                <span>Dead clicks (est.)</span>
+                <div>
+                  <span>無反応クリック率</span>
+                  <span className="ml-1 text-[10px] text-slate-500">Dead clicks</span>
+                </div>
                 <span>{(bundle.clarityUx.deadClickRate * 100).toFixed(2)}%</span>
               </div>
               <div className="flex justify-between">
-                <span>Rage clicks (est.)</span>
+                <div>
+                  <span>連打クリック率</span>
+                  <span className="ml-1 text-[10px] text-slate-500">Rage clicks</span>
+                </div>
                 <span>{(bundle.clarityUx.rageClickRate * 100).toFixed(2)}%</span>
               </div>
               <div className="flex justify-between">
-                <span>Scroll depth (avg)</span>
+                <div>
+                  <span>平均スクロール到達度</span>
+                  <span className="ml-1 text-[10px] text-slate-500">Scroll depth</span>
+                </div>
                 <span>{bundle.clarityUx.scrollDepth.toFixed(1)}</span>
               </div>
             </div>
@@ -236,15 +253,37 @@ export default async function IntelligencePage({
         </div>
 
         <Card>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">チャネル別セッション</h2>
+              <p className="mt-0.5 text-xs text-slate-500">GA4 のデフォルト チャネル グループ（同期データ）</p>
+            </div>
+          </div>
+          <ChannelMixPie data={channelMix} />
+        </Card>
+
+        <Card>
           <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Contributing factors & top performers</h2>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="text-xs uppercase tracking-wide text-slate-500">
+              <thead className="text-xs tracking-wide text-slate-500">
                 <tr>
-                  <th className="py-2">Source / Query</th>
-                  <th className="py-2">Volume (clicks)</th>
-                  <th className="py-2">CTR (proxy)</th>
-                  <th className="py-2">Trend</th>
+                  <th className="py-2">
+                    <span className="block text-slate-300">クエリ</span>
+                    <span className="block text-[9px] text-slate-600">Query</span>
+                  </th>
+                  <th className="py-2">
+                    <span className="block text-slate-300">クリック数</span>
+                    <span className="block text-[9px] text-slate-600">Clicks</span>
+                  </th>
+                  <th className="py-2">
+                    <span className="block text-slate-300">CTR</span>
+                    <span className="block text-[9px] text-slate-600">CTR</span>
+                  </th>
+                  <th className="py-2">
+                    <span className="block text-slate-300">傾向</span>
+                    <span className="block text-[9px] text-slate-600">Trend</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">

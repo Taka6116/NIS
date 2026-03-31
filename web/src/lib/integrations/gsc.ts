@@ -1,16 +1,18 @@
 import { google } from "googleapis";
-import type { GscDailyRow } from "@/types/nis";
+import type { GscDailyRow, GscRowType } from "@/types/nis";
 import { getServiceAccountCredentials } from "@/lib/integrations/google-credentials";
 
 function sanitizePart(s: string): string {
   return s.replaceAll("#", "_").slice(0, 400);
 }
 
-export async function fetchGscDailyRows(opts: {
+async function fetchGscWithDimensions(opts: {
   projectId: string;
   siteUrl: string;
   startDate: string;
   endDate: string;
+  dimensions: string[];
+  rowType: GscRowType;
 }): Promise<GscDailyRow[]> {
   const creds = getServiceAccountCredentials();
   if (!creds) return [];
@@ -26,7 +28,7 @@ export async function fetchGscDailyRows(opts: {
     requestBody: {
       startDate: opts.startDate,
       endDate: opts.endDate,
-      dimensions: ["date", "query", "page"],
+      dimensions: opts.dimensions,
       rowLimit: 25000,
       dataState: "all",
     },
@@ -34,18 +36,41 @@ export async function fetchGscDailyRows(opts: {
 
   const rows = res.data.rows ?? [];
   const out: GscDailyRow[] = [];
+
   for (const r of rows) {
     const dims = r.keys ?? [];
-    const date = dims[0] ?? "";
-    const query = dims[1] ?? "";
-    const page = dims[2] ?? "";
-    const sk = `${date}#${sanitizePart(query)}#${sanitizePart(page)}`;
+    let date = "";
+    let sk = "";
+    let query: string | undefined;
+    let page: string | undefined;
+    let device: string | undefined;
+    let country: string | undefined;
+
+    if (opts.rowType === "query") {
+      date = dims[0] ?? "";
+      query = dims[1] ?? "";
+      page = dims[2] ?? "";
+      sk = `${date}#${sanitizePart(query)}#${sanitizePart(page)}`;
+    } else if (opts.rowType === "device") {
+      date = dims[0] ?? "";
+      device = dims[1] ?? "";
+      page = dims[2] ?? "";
+      sk = `${date}#d#${sanitizePart(device)}#${sanitizePart(page)}`;
+    } else {
+      date = dims[0] ?? "";
+      country = dims[1] ?? "";
+      sk = `${date}#c#${sanitizePart(country)}`;
+    }
+
     out.push({
       projectId: opts.projectId,
       sk,
       date,
+      rowType: opts.rowType,
       query,
       page,
+      device,
+      country,
       clicks: r.clicks ?? 0,
       impressions: r.impressions ?? 0,
       ctr: r.ctr ?? 0,
@@ -53,4 +78,26 @@ export async function fetchGscDailyRows(opts: {
     });
   }
   return out;
+}
+
+export async function fetchGscDailyRows(opts: {
+  projectId: string;
+  siteUrl: string;
+  startDate: string;
+  endDate: string;
+}): Promise<GscDailyRow[]> {
+  const common = {
+    projectId: opts.projectId,
+    siteUrl: opts.siteUrl,
+    startDate: opts.startDate,
+    endDate: opts.endDate,
+  };
+
+  const [byQuery, byDevice, byCountry] = await Promise.all([
+    fetchGscWithDimensions({ ...common, dimensions: ["date", "query", "page"], rowType: "query" }),
+    fetchGscWithDimensions({ ...common, dimensions: ["date", "device", "page"], rowType: "device" }),
+    fetchGscWithDimensions({ ...common, dimensions: ["date", "country"], rowType: "country" }),
+  ]);
+
+  return [...byQuery, ...byDevice, ...byCountry];
 }
