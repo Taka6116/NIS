@@ -6,9 +6,11 @@ const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
+  if (pathname === "/login") {
+    return NextResponse.next();
+  }
   if (pathname.startsWith("/api/auth")) return NextResponse.next();
   if (pathname.startsWith("/api/cron")) return NextResponse.next();
-  if (pathname === "/login") return NextResponse.next();
   if (!req.auth) {
     return NextResponse.redirect(new URL("/login", req.nextUrl.origin));
   }
@@ -17,6 +19,7 @@ export default auth((req) => {
 
 export const config = {
   matcher: [
+    "/login",
     "/",
     "/projects/:path*",
     "/admin/:path*",

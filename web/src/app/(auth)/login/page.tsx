@@ -3,6 +3,9 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { redirect } from "next/navigation";
 
+/** `auth()` uses `headers()` — must not be statically rendered (Next.js 15). */
+export const dynamic = "force-dynamic";
+
 const hasGoogle = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 const hasDevBypass = process.env.NIS_DEV_BYPASS_AUTH === "1";
 
@@ -15,7 +18,7 @@ export default async function LoginPage() {
       <Card className="glow-border w-full max-w-md space-y-6 p-8">
         <div>
           <h1 className="text-2xl font-bold text-white">NIS</h1>
-          <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.2em] text-slate-500">
+          <p className="mt-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">
             Nihon Insight System
           </p>
           <p className="mt-3 text-sm text-slate-400">

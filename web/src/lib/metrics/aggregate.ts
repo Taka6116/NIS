@@ -1,8 +1,10 @@
 import { addDays, format, parseISO, subDays } from "date-fns";
+import { computePreviousWindow } from "@/lib/metrics/date-range";
+import type { RangeKey } from "@/lib/metrics/date-range";
 import { queryClarityByProject, queryGa4ByProject, queryGscByProjectAndDatePrefix } from "@/lib/dynamodb/repositories/metrics";
 import type { ClarityDailyRow, Ga4DailyRow, GscDailyRow } from "@/types/nis";
 
-export type RangeKey = "7d" | "30d" | "90d";
+export type { RangeKey } from "@/lib/metrics/date-range";
 
 function rangeDays(key: RangeKey): number {
   if (key === "7d") return 7;
@@ -109,13 +111,13 @@ export type KpiSnapshot = {
   avgPosition: number;
 };
 
-export async function getMetricsBundle(projectId: string, range: RangeKey) {
-  const days = rangeDays(range);
-  const end = format(new Date(), "yyyy-MM-dd");
-  const start = format(subDays(new Date(), days - 1), "yyyy-MM-dd");
-  const prevEnd = format(subDays(parseISO(start), 1), "yyyy-MM-dd");
-  const prevStart = format(subDays(parseISO(start), days), "yyyy-MM-dd");
-
+async function buildMetricsBundleFromSpans(
+  projectId: string,
+  start: string,
+  end: string,
+  prevStart: string,
+  prevEnd: string,
+) {
   const [gscCur, gscPrev, ga4Cur, ga4Prev, clarityCur] = await Promise.all([
     loadGsc(projectId, start, end),
     loadGsc(projectId, prevStart, prevEnd),
@@ -179,6 +181,20 @@ export async function getMetricsBundle(projectId: string, range: RangeKey) {
   };
 }
 
+/** 明示的な開始・終了日（YYYY-MM-DD）で KPI バンドルを取得 */
+export async function getMetricsBundleForDates(projectId: string, start: string, end: string) {
+  const { prevStart, prevEnd } = computePreviousWindow(start, end);
+  return buildMetricsBundleFromSpans(projectId, start, end, prevStart, prevEnd);
+}
+
+export async function getMetricsBundle(projectId: string, range: RangeKey) {
+  const days = rangeDays(range);
+  const end = format(new Date(), "yyyy-MM-dd");
+  const start = format(subDays(new Date(), days - 1), "yyyy-MM-dd");
+  const { prevStart, prevEnd } = computePreviousWindow(start, end);
+  return buildMetricsBundleFromSpans(projectId, start, end, prevStart, prevEnd);
+}
+
 export type ContributingRow = {
   label: string;
   volume: number;
@@ -186,10 +202,7 @@ export type ContributingRow = {
   trend: "up" | "down" | "flat";
 };
 
-export async function getContributingFactors(projectId: string, range: RangeKey): Promise<ContributingRow[]> {
-  const days = rangeDays(range);
-  const end = format(new Date(), "yyyy-MM-dd");
-  const start = format(subDays(new Date(), days - 1), "yyyy-MM-dd");
+export async function getContributingFactorsForDates(projectId: string, start: string, end: string): Promise<ContributingRow[]> {
   const gscRows = await loadGsc(projectId, start, end);
   const byQuery = new Map<string, { clicks: number; impressions: number }>();
   for (const r of gscRows) {
@@ -212,6 +225,13 @@ export async function getContributingFactors(projectId: string, range: RangeKey)
     ...r,
     trend: r.conversion > 0.05 ? "up" : r.conversion < 0.02 ? "down" : "flat",
   }));
+}
+
+export async function getContributingFactors(projectId: string, range: RangeKey): Promise<ContributingRow[]> {
+  const days = rangeDays(range);
+  const end = format(new Date(), "yyyy-MM-dd");
+  const start = format(subDays(new Date(), days - 1), "yyyy-MM-dd");
+  return getContributingFactorsForDates(projectId, start, end);
 }
 
 export async function getTimeseries(
@@ -250,6 +270,48 @@ export async function getTimeseries(
     if (metric === "impressions") value = g.impressions;
     if (metric === "avgPosition") value = g.avgPosition;
     return { date: d, value };
+  });
+
+  return { metric, data };
+}
+
+export async function getTimeseriesForDates(
+  projectId: string,
+  metric: "sessions" | "conversions" | "impressions" | "avgPosition",
+  start: string,
+  end: string,
+) {
+  const dates: string[] = [];
+  let d = parseISO(start);
+  const endDate = parseISO(end);
+  while (d <= endDate) {
+    dates.push(format(d, "yyyy-MM-dd"));
+    d = addDays(d, 1);
+  }
+
+  const gscAll = await Promise.all(dates.map((day) => queryGscByProjectAndDatePrefix(projectId, day)));
+  const ga4All = await queryGa4ByProject(projectId);
+
+  const byDate: Record<string, { gsc: GscDailyRow[]; ga4: Ga4DailyRow[] }> = {};
+  for (const day of dates) byDate[day] = { gsc: [], ga4: [] };
+  for (const chunk of gscAll) {
+    for (const r of chunk) {
+      if (byDate[r.date]) byDate[r.date]!.gsc.push(r);
+    }
+  }
+  for (const r of ga4All) {
+    if (byDate[r.date]) byDate[r.date]!.ga4.push(r);
+  }
+
+  const data = dates.map((day) => {
+    const g = aggregateGsc(byDate[day]!.gsc);
+    const a = aggregateGa4(byDate[day]!.ga4);
+    let value = 0;
+    if (metric === "sessions") value = a.sessions;
+    if (metric === "conversions") value = a.conversions;
+    if (metric === "impressions") value = g.impressions;
+    if (metric === "avgPosition") value = g.avgPosition;
+    return { date: day, value };
   });
 
   return { metric, data };

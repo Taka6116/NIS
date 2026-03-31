@@ -1,6 +1,6 @@
-import { getMetricsBundle } from "@/lib/metrics/aggregate";
+import { getMetricsBundleForDates } from "@/lib/metrics/aggregate";
+import { resolveMetricsWindowOrDefault } from "@/lib/metrics/date-range";
 import { requireSession, isAuthError } from "@/lib/rbac";
-import type { RangeKey } from "@/lib/metrics/aggregate";
 
 export async function GET(
   req: Request,
@@ -12,10 +12,14 @@ export async function GET(
   }
   const { projectId } = await ctx.params;
   const url = new URL(req.url);
-  const raw = url.searchParams.get("range");
-  const range: RangeKey = raw === "30d" || raw === "90d" ? raw : "7d";
-  const bundle = await getMetricsBundle(projectId, range);
+  const metricsWindow = resolveMetricsWindowOrDefault({
+    from: url.searchParams.get("from") ?? undefined,
+    to: url.searchParams.get("to") ?? undefined,
+    range: url.searchParams.get("range") ?? undefined,
+  });
+  const bundle = await getMetricsBundleForDates(projectId, metricsWindow.start, metricsWindow.end);
   return Response.json({
+    window: { start: metricsWindow.start, end: metricsWindow.end },
     current: {
       sessions: bundle.current.sessions,
       users: bundle.current.users,

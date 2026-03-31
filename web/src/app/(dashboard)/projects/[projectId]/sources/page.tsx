@@ -1,6 +1,7 @@
 import { AppHeader } from "@/components/layout/app-header";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { SyncButton } from "@/components/dashboard/sync-button";
 import { auth } from "@/auth";
 import { getProject } from "@/lib/dynamodb/repositories/projects";
 import { notFound } from "next/navigation";
@@ -19,6 +20,11 @@ export default async function SourcesPage({ params }: { params: Promise<{ projec
         subtitle="各データソースの接続状態と最終同期のサマリーです。"
         userEmail={session?.user?.email}
       />
+
+      <div className="mt-6">
+        <SyncButton projectId={projectId} />
+      </div>
+
       <div className="mt-8 grid gap-4 md:grid-cols-3">
         <Card>
           <div className="text-xs font-semibold text-slate-400">Google Analytics 4</div>

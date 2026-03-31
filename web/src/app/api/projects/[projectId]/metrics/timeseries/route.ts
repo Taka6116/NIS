@@ -1,6 +1,6 @@
-import { getTimeseries } from "@/lib/metrics/aggregate";
+import { getTimeseriesForDates } from "@/lib/metrics/aggregate";
+import { resolveMetricsWindowOrDefault } from "@/lib/metrics/date-range";
 import { requireSession, isAuthError } from "@/lib/rbac";
-import type { RangeKey } from "@/lib/metrics/aggregate";
 
 export async function GET(
   req: Request,
@@ -17,8 +17,11 @@ export async function GET(
     | "conversions"
     | "impressions"
     | "avgPosition";
-  const raw = url.searchParams.get("range");
-  const range: RangeKey = raw === "7d" || raw === "90d" ? raw : "30d";
-  const series = await getTimeseries(projectId, metric, range);
+  const metricsWindow = resolveMetricsWindowOrDefault({
+    from: url.searchParams.get("from") ?? undefined,
+    to: url.searchParams.get("to") ?? undefined,
+    range: url.searchParams.get("range") ?? undefined,
+  });
+  const series = await getTimeseriesForDates(projectId, metric, metricsWindow.start, metricsWindow.end);
   return Response.json(series);
 }

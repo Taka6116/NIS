@@ -16,20 +16,27 @@ export function IntelligenceChartTabs({
   projectId,
   initialMetric,
   initialData,
+  rangeStart,
+  rangeEnd,
 }: {
   projectId: string;
   initialMetric: Metric;
   initialData: { date: string; value: number }[];
+  rangeStart: string;
+  rangeEnd: string;
 }) {
   const [metric, setMetric] = useState<Metric>(initialMetric);
   const [data, setData] = useState(initialData);
 
   useEffect(() => {
+    setData(initialData);
+  }, [initialData, rangeStart, rangeEnd]);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
-      const res = await fetch(
-        `/api/projects/${projectId}/metrics/timeseries?metric=${metric}&range=30d`,
-      );
+      const q = new URLSearchParams({ metric, from: rangeStart, to: rangeEnd });
+      const res = await fetch(`/api/projects/${projectId}/metrics/timeseries?${q}`);
       if (!res.ok) return;
       const json = (await res.json()) as { data: { date: string; value: number }[] };
       if (!cancelled) setData(json.data);
@@ -37,7 +44,7 @@ export function IntelligenceChartTabs({
     return () => {
       cancelled = true;
     };
-  }, [metric, projectId]);
+  }, [metric, projectId, rangeStart, rangeEnd]);
 
   return (
     <div className="space-y-4">

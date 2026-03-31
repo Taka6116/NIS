@@ -4,10 +4,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { KpiCards } from "@/components/dashboard/kpi-cards";
 import { IntelligenceChartTabs } from "@/components/dashboard/intelligence-chart-tabs";
+import { IntelligenceDateRange } from "@/components/dashboard/intelligence-date-range";
 import { auth } from "@/auth";
 import { listInsights } from "@/lib/dynamodb/repositories/insights";
 import { getProject } from "@/lib/dynamodb/repositories/projects";
-import { getContributingFactors, getMetricsBundle, getTimeseries } from "@/lib/metrics/aggregate";
+import {
+  getContributingFactorsForDates,
+  getMetricsBundleForDates,
+  getTimeseriesForDates,
+} from "@/lib/metrics/aggregate";
+import { buildIntelligenceQuery, resolveMetricsWindowOrDefault } from "@/lib/metrics/date-range";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -16,29 +22,40 @@ export default async function IntelligencePage({
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; from?: string; to?: string; range?: string }>;
 }) {
   const { projectId } = await params;
-  const { view } = await searchParams;
+  const sp = await searchParams;
   const project = await getProject(projectId);
   if (!project) notFound();
 
+  const metricsWindow = resolveMetricsWindowOrDefault({
+    from: sp.from,
+    to: sp.to,
+    range: sp.range,
+  });
+
   const session = await auth();
   const [bundle, contributors, insights, series] = await Promise.all([
-    getMetricsBundle(projectId, "7d"),
-    getContributingFactors(projectId, "7d"),
+    getMetricsBundleForDates(projectId, metricsWindow.start, metricsWindow.end),
+    getContributingFactorsForDates(projectId, metricsWindow.start, metricsWindow.end),
     listInsights(projectId, 3),
-    getTimeseries(projectId, "sessions", "30d"),
+    getTimeseriesForDates(projectId, "sessions", metricsWindow.start, metricsWindow.end),
   ]);
 
   const latest = insights[0];
 
+  const activeTab = sp.view && ["global", "anomalies", "forecast"].includes(sp.view) ? sp.view : "global";
+  const viewParam = activeTab === "global" ? "global" : activeTab;
+
   const tabs = [
-    { id: "global", label: "Global view", href: `/projects/${projectId}?view=global` },
-    { id: "anomalies", label: "Anomalies", href: `/projects/${projectId}?view=anomalies` },
-    { id: "forecast", label: "Forecasting", href: `/projects/${projectId}?view=forecast` },
+    { id: "global", label: "Global view", href: `/projects/${projectId}${buildIntelligenceQuery(metricsWindow, "global")}` },
+    { id: "anomalies", label: "Anomalies", href: `/projects/${projectId}${buildIntelligenceQuery(metricsWindow, "anomalies")}` },
+    { id: "forecast", label: "Forecasting", href: `/projects/${projectId}${buildIntelligenceQuery(metricsWindow, "forecast")}` },
   ];
-  const activeTab = view && ["global", "anomalies", "forecast"].includes(view) ? view : "global";
+
+  const activePreset =
+    metricsWindow.source === "preset" ? (metricsWindow.preset ?? "7d") : null;
 
   return (
     <main className="min-w-0 flex-1 p-8">
@@ -50,6 +67,25 @@ export default async function IntelligencePage({
         executeHref={`/projects/${projectId}/insights/generate`}
         userEmail={session?.user?.email}
       />
+
+      <div className="mt-6 space-y-3">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-slate-500">
+            表示期間{" "}
+            <span className="font-medium text-slate-200">
+              {metricsWindow.start} 〜 {metricsWindow.end}
+            </span>
+            （前期間との比較は自動計算）
+          </p>
+        </div>
+        <IntelligenceDateRange
+          projectId={projectId}
+          view={viewParam}
+          rangeStart={metricsWindow.start}
+          rangeEnd={metricsWindow.end}
+          activePreset={activePreset}
+        />
+      </div>
 
       <div className="mt-8 space-y-6">
         <KpiCards
@@ -108,7 +144,13 @@ export default async function IntelligencePage({
             </div>
             <p className="mt-1 text-xs text-slate-500">{bundle.freshnessNote}</p>
             <div className="mt-4">
-              <IntelligenceChartTabs projectId={projectId} initialMetric="sessions" initialData={series.data} />
+              <IntelligenceChartTabs
+                projectId={projectId}
+                initialMetric="sessions"
+                initialData={series.data}
+                rangeStart={metricsWindow.start}
+                rangeEnd={metricsWindow.end}
+              />
             </div>
           </Card>
 
