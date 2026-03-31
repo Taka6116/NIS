@@ -1,0 +1,18 @@
+NIS を Vercel に載せるときの必須設定
+=====================================
+
+ダッシュボードで次を設定してください（AWS / DynamoDB はビルド成功とは無関係です）。
+
+1. Project → Settings → General → Root Directory
+   → 「web」と入力して保存
+
+2. 同じ画面の Framework Preset
+   → 「Next.js」のまま（または一度「Next.js」に戻す）
+
+3. Build & Development Settings
+   - Build Command: 空欄（既定の npm run build のまま）
+   - Output Directory: 空欄（Next.js では指定しない）
+   - Install Command: 空欄（既定の npm install のまま）
+
+ルートにあった vercel.json（install/build 上書き）は削除しました。
+Cron は web/vercel.json にあります（Root Directory が web のときだけ有効です）。
