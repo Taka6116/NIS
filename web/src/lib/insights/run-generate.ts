@@ -1,0 +1,64 @@
+import { putInsight } from "@/lib/dynamodb/repositories/insights";
+import { getProject } from "@/lib/dynamodb/repositories/projects";
+import { generateInsightJson } from "@/lib/integrations/gemini";
+import { runRules } from "@/lib/insights/rules";
+import { getMetricsBundle } from "@/lib/metrics/aggregate";
+import type { InsightFinding, InsightRecord } from "@/types/nis";
+
+export async function runInsightGeneration(projectId: string): Promise<InsightRecord> {
+  const project = await getProject(projectId);
+  if (!project) throw new Error("Project not found");
+
+  const bundle = await getMetricsBundle(projectId, "7d");
+  const alerts = runRules({
+    current: bundle.current,
+    previous: bundle.previous,
+    change: bundle.change,
+  });
+
+  const clarityNote = bundle.clarityUx
+    ? `推定UXスコア ${bundle.clarityUx.score}。Dead click 率 ${(bundle.clarityUx.deadClickRate * 100).toFixed(2)}%、Rage ${(bundle.clarityUx.rageClickRate * 100).toFixed(2)}%、平均 Scroll depth ${bundle.clarityUx.scrollDepth.toFixed(1)}。`
+    : undefined;
+
+  const { payload, raw, model } = await generateInsightJson({
+    projectName: project.projectName,
+    domain: project.domain,
+    periodLabel: `${bundle.range.start} 〜 ${bundle.range.end}`,
+    current: bundle.current,
+    previous: bundle.previous,
+    change: bundle.change as unknown as Record<string, number>,
+    alerts,
+    clarityNote,
+  });
+
+  const generatedAtIso = new Date().toISOString();
+  const sk = `${generatedAtIso}#weekly`;
+
+  const findings: InsightFinding[] = payload.findings.map((f) => ({
+    category: f.category,
+    severity: f.severity,
+    title: f.title,
+    observation: f.observation,
+    hypothesis: f.hypothesis,
+    risk: f.risk,
+    actions: f.actions,
+    expectedImpact: f.expectedImpact,
+  }));
+
+  const row: InsightRecord = {
+    projectId,
+    sk,
+    type: "weekly",
+    period: { start: bundle.range.start, end: bundle.range.end },
+    summary: payload.summary,
+    findings,
+    topPriority: payload.topPriority,
+    rawPrompt: raw.slice(0, 12000),
+    modelVersion: model,
+    generatedAtIso,
+  };
+
+  await putInsight(row);
+
+  return row;
+}
