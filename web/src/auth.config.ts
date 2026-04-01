@@ -1,6 +1,7 @@
 import type { NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
+import bcrypt from "bcryptjs";
 
 function buildProviders() {
   const list: NextAuthConfig["providers"] = [];
@@ -10,6 +11,34 @@ function buildProviders() {
       Google({
         clientId: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      }),
+    );
+  }
+
+  if (process.env.NIS_CREDENTIALS_EMAIL && process.env.NIS_CREDENTIALS_PASSWORD_HASH) {
+    list.push(
+      Credentials({
+        id: "credentials",
+        name: "Email & Password",
+        credentials: {
+          email: { label: "メールアドレス", type: "email" },
+          password: { label: "パスワード", type: "password" },
+        },
+        async authorize(credentials) {
+          const allowedEmail = process.env.NIS_CREDENTIALS_EMAIL!;
+          const hash = process.env.NIS_CREDENTIALS_PASSWORD_HASH!;
+          const email = credentials?.email as string | undefined;
+          const password = credentials?.password as string | undefined;
+          if (!email || !password) return null;
+          if (email.toLowerCase() !== allowedEmail.toLowerCase()) return null;
+          const ok = await bcrypt.compare(password, hash);
+          if (!ok) return null;
+          return {
+            id: email.toLowerCase(),
+            email: allowedEmail,
+            name: allowedEmail.split("@")[0],
+          };
+        },
       }),
     );
   }

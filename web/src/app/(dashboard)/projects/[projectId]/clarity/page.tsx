@@ -1,6 +1,7 @@
 import { AppHeader } from "@/components/layout/app-header";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ClarityUxDonut } from "@/components/dashboard/clarity-ux-donut";
 import { IntelligenceDateRange } from "@/components/dashboard/intelligence-date-range";
 import { auth } from "@/auth";
 import { getProject } from "@/lib/dynamodb/repositories/projects";
@@ -90,31 +91,58 @@ export default async function ClarityDetailPage({
         />
       </div>
 
-      <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <Card>
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Composite score</div>
-          <div className="mt-0.5 text-xs font-medium text-slate-300">UX 総合スコア</div>
-          <div className="mt-2 text-3xl font-semibold text-emerald-300">{ux.score}</div>
-          <p className="mt-1 text-[10px] text-slate-500">100 点満点。高いほど良好</p>
-        </Card>
-        <Card>
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Dead click</div>
-          <div className="mt-0.5 text-xs font-medium text-slate-300">無反応クリック率</div>
-          <div className="mt-2 text-2xl font-semibold text-slate-100">{(ux.deadClickRate * 100).toFixed(2)}%</div>
-          <p className="mt-1 text-[10px] text-slate-500">押しても反応がなかったクリックの割合</p>
-        </Card>
-        <Card>
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Rage click</div>
-          <div className="mt-0.5 text-xs font-medium text-slate-300">連打クリック率</div>
-          <div className="mt-2 text-2xl font-semibold text-slate-100">{(ux.rageClickRate * 100).toFixed(2)}%</div>
-          <p className="mt-1 text-[10px] text-slate-500">苛立ちによる連続クリックの割合</p>
-        </Card>
-        <Card>
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Scroll depth</div>
-          <div className="mt-0.5 text-xs font-medium text-slate-300">平均スクロール到達度</div>
-          <div className="mt-2 text-2xl font-semibold text-slate-100">{ux.scrollDepth.toFixed(1)}</div>
-          <p className="mt-1 text-[10px] text-slate-500">ページをどこまで読んだかの平均</p>
-        </Card>
+      <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <ClarityUxDonut
+          value={ux.score}
+          maxValue={100}
+          label="Composite score"
+          sublabel="UX 総合スコア"
+          format="score"
+          thresholds={[40, 70]}
+          description="100 点満点。高いほど良好"
+        />
+        <ClarityUxDonut
+          value={ux.deadClickRate}
+          maxValue={1}
+          label="Dead click"
+          sublabel="無反応クリック率"
+          format="percent"
+          thresholds={[5, 15]}
+          inverted
+          description="押しても反応がなかったクリックの割合"
+        />
+        <ClarityUxDonut
+          value={ux.rageClickRate}
+          maxValue={1}
+          label="Rage click"
+          sublabel="連打クリック率"
+          format="percent"
+          thresholds={[3, 10]}
+          inverted
+          description="苛立ちによる連続クリックの割合"
+        />
+        <ClarityUxDonut
+          value={ux.scrollDepth}
+          maxValue={100}
+          label="Scroll depth"
+          sublabel="平均スクロール到達度"
+          format="score"
+          thresholds={[30, 60]}
+          description="ページをどこまで読んだかの平均"
+        />
+        <ClarityUxDonut
+          value={ux.botTrafficRate}
+          maxValue={1}
+          label="Bot traffic"
+          sublabel="ボットセッション率"
+          format="percent"
+          thresholds={[10, 30]}
+          inverted
+          description="全セッション中のボットの割合"
+        />
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card>
           <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Quickback</div>
           <div className="mt-0.5 text-xs font-medium text-slate-300">即戻り件数</div>
@@ -127,9 +155,6 @@ export default async function ClarityDetailPage({
           <div className="mt-2 text-2xl font-semibold text-slate-100">{ux.excessiveScrollCount.toLocaleString()}</div>
           <p className="mt-1 text-[10px] text-slate-500">必要以上にスクロールしている兆候</p>
         </Card>
-      </div>
-
-      <div className="mt-4 grid gap-4 md:grid-cols-3">
         <Card>
           <div className="text-[10px] font-semibold uppercase text-slate-500">Site traffic</div>
           <div className="mt-0.5 text-xs text-slate-300">総ページビュー（API）</div>
@@ -139,12 +164,6 @@ export default async function ClarityDetailPage({
           <div className="text-[10px] font-semibold uppercase text-slate-500">Users</div>
           <div className="mt-0.5 text-xs text-slate-300">推定ユニークユーザー</div>
           <div className="mt-2 text-xl font-semibold text-white">{ux.distinctUsers.toLocaleString()}</div>
-        </Card>
-        <Card>
-          <div className="text-[10px] font-semibold uppercase text-slate-500">Bot traffic</div>
-          <div className="mt-0.5 text-xs text-slate-300">ボットセッション率（参考）</div>
-          <div className="mt-2 text-xl font-semibold text-amber-200">{(ux.botTrafficRate * 100).toFixed(1)}%</div>
-          <p className="mt-1 text-[10px] text-slate-500">Pages / session: {ux.pagesPerSession.toFixed(2)}</p>
         </Card>
       </div>
 
