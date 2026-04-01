@@ -1,7 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
 
 function buildProviders() {
   const list: NextAuthConfig["providers"] = [];
@@ -15,7 +14,7 @@ function buildProviders() {
     );
   }
 
-  if (process.env.NIS_CREDENTIALS_EMAIL && process.env.NIS_CREDENTIALS_PASSWORD_HASH) {
+  if (process.env.AUTH_EMAIL && process.env.AUTH_PASSWORD) {
     list.push(
       Credentials({
         id: "credentials",
@@ -25,14 +24,22 @@ function buildProviders() {
           password: { label: "パスワード", type: "password" },
         },
         async authorize(credentials) {
-          const allowedEmail = process.env.NIS_CREDENTIALS_EMAIL!;
-          const hash = process.env.NIS_CREDENTIALS_PASSWORD_HASH!;
+          const allowedEmail = process.env.AUTH_EMAIL!;
+          const storedPassword = process.env.AUTH_PASSWORD!;
           const email = credentials?.email as string | undefined;
           const password = credentials?.password as string | undefined;
           if (!email || !password) return null;
           if (email.toLowerCase() !== allowedEmail.toLowerCase()) return null;
-          const ok = await bcrypt.compare(password, hash);
+
+          let ok = false;
+          if (storedPassword.startsWith("$2")) {
+            const { default: bcrypt } = await import("bcryptjs");
+            ok = await bcrypt.compare(password, storedPassword);
+          } else {
+            ok = password === storedPassword;
+          }
           if (!ok) return null;
+
           return {
             id: email.toLowerCase(),
             email: allowedEmail,

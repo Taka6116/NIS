@@ -1,5 +1,6 @@
 import { AppHeader } from "@/components/layout/app-header";
 import { SettingsHub } from "@/components/dashboard/settings-hub";
+import { LogoutButton } from "./logout-button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -70,6 +71,18 @@ export default async function SettingsPage({ params }: { params: Promise<{ proje
           </div>
         </Card>
       ) : null}
+
+      <Card className="mt-6 border-rose-400/15 bg-rose-500/[0.03]">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-white">ログアウト</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              現在 <span className="text-slate-300">{session?.user?.email ?? "—"}</span> でログイン中
+            </p>
+          </div>
+          <LogoutButton />
+        </div>
+      </Card>
     </main>
   );
 }

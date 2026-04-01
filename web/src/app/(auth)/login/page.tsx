@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 const hasGoogle = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 const hasDevBypass = process.env.NIS_DEV_BYPASS_AUTH === "1";
-const hasCredentials = !!(process.env.NIS_CREDENTIALS_EMAIL && process.env.NIS_CREDENTIALS_PASSWORD_HASH);
+const hasCredentials = !!(process.env.AUTH_EMAIL && process.env.AUTH_PASSWORD);
 
 export default async function LoginPage() {
   const session = await auth();
@@ -59,7 +59,7 @@ export default async function LoginPage() {
           <div className="rounded-lg border border-rose-400/20 bg-rose-500/10 p-3 text-xs text-rose-200">
             ログイン手段がありません。<code>.env.local</code> に{" "}
             <code>GOOGLE_CLIENT_ID</code> / <code>GOOGLE_CLIENT_SECRET</code>（Google OAuth）、
-            <code>NIS_CREDENTIALS_EMAIL</code> / <code>NIS_CREDENTIALS_PASSWORD_HASH</code>（メール認証）、
+            <code>AUTH_EMAIL</code> / <code>AUTH_PASSWORD</code>（メール認証）、
             または <code>NIS_DEV_BYPASS_AUTH=1</code>（開発バイパス）を設定してください。
           </div>
         ) : null}

@@ -1,5 +1,6 @@
 import { AppHeader } from "@/components/layout/app-header";
 import { Card } from "@/components/ui/card";
+import { ClarityUxDonut } from "@/components/dashboard/clarity-ux-donut";
 import { ChannelMixPie } from "@/components/dashboard/channel-mix-pie";
 import { IntelligenceDateRange } from "@/components/dashboard/intelligence-date-range";
 import { auth } from "@/auth";
@@ -173,11 +174,15 @@ export default async function TrafficAnalyticsPage({
           <div className="mt-0.5 text-xs text-slate-300">セッション数</div>
           <div className="mt-2 text-2xl font-semibold text-white">{sessions.toLocaleString()}</div>
         </Card>
-        <Card>
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Engagement rate</div>
-          <div className="mt-0.5 text-xs text-slate-300">エンゲージメント率</div>
-          <div className="mt-2 text-2xl font-semibold text-white">{(engagementRate * 100).toFixed(1)}%</div>
-        </Card>
+        <ClarityUxDonut
+          value={engagementRate}
+          maxValue={1}
+          label="Engagement rate"
+          sublabel="エンゲージメント率"
+          format="percent"
+          thresholds={[40, 60]}
+          description="10秒超 or 2PV以上 or CV発生のセッション割合"
+        />
         <Card>
           <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">New users</div>
           <div className="mt-0.5 text-xs text-slate-300">新規ユーザー</div>
@@ -188,11 +193,16 @@ export default async function TrafficAnalyticsPage({
           <div className="mt-0.5 text-xs text-slate-300">コンバージョン（イベント）</div>
           <div className="mt-2 text-2xl font-semibold text-white">{conversions.toLocaleString()}</div>
         </Card>
-        <Card>
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Bounce rate</div>
-          <div className="mt-0.5 text-xs text-slate-300">直帰率（セッション加重）</div>
-          <div className="mt-2 text-2xl font-semibold text-white">{(bounceRate * 100).toFixed(1)}%</div>
-        </Card>
+        <ClarityUxDonut
+          value={bounceRate}
+          maxValue={1}
+          label="Bounce rate"
+          sublabel="直帰率"
+          format="percent"
+          thresholds={[40, 60]}
+          inverted
+          description="セッション加重平均。低いほど良好"
+        />
         <Card>
           <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Avg engagement</div>
           <div className="mt-0.5 text-xs text-slate-300">ユーザー エンゲージメント時間（加重平均・秒）</div>

@@ -1,10 +1,12 @@
 import { AppHeader } from "@/components/layout/app-header";
 import { InsightStageTabs } from "@/components/insights/insight-stage-tabs";
+import { InsightExportButton } from "@/components/insights/insight-export-button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { auth } from "@/auth";
 import { getInsight } from "@/lib/dynamodb/repositories/insights";
 import { getProject } from "@/lib/dynamodb/repositories/projects";
+import { generateSlideOutline } from "@/lib/insights/export-slide-outline";
 import { notFound } from "next/navigation";
 
 export default async function InsightDetailPage({
@@ -20,6 +22,12 @@ export default async function InsightDetailPage({
   if (!insight) notFound();
   const session = await auth();
 
+  const outlineText = generateSlideOutline({
+    insight,
+    projectName: project.projectName,
+    domain: project.domain,
+  });
+
   return (
     <main className="min-w-0 flex-1 p-8">
       <AppHeader
@@ -30,7 +38,10 @@ export default async function InsightDetailPage({
         userEmail={session?.user?.email}
       />
       <Card className="mt-8 glow-border">
-        <p className="text-sm leading-relaxed text-slate-200">{insight.summary}</p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <p className="min-w-0 flex-1 text-sm leading-relaxed text-slate-200">{insight.summary}</p>
+          <InsightExportButton outlineText={outlineText} />
+        </div>
         <div className="mt-4 rounded-lg border border-white/10 bg-white/5 p-4">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Top priority</div>
           <p className="mt-2 text-sm text-white">{insight.topPriority.action}</p>

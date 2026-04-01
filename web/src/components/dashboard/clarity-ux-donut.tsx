@@ -7,7 +7,7 @@ type ClarityUxDonutProps = {
   maxValue: number;
   label: string;
   sublabel: string;
-  format: "score" | "percent";
+  format: "score" | "percent" | "scorePercent";
   thresholds: [number, number];
   inverted?: boolean;
   description?: string;
@@ -41,7 +41,7 @@ export function ClarityUxDonut({
   const ratio = Math.min(1, Math.max(0, value / maxValue));
   const displayValue = format === "percent" ? value * 100 : value;
   const centerText =
-    format === "percent"
+    format === "percent" || format === "scorePercent"
       ? `${displayValue.toFixed(1)}%`
       : String(Math.round(displayValue));
 

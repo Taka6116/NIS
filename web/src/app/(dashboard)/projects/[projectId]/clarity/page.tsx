@@ -126,7 +126,7 @@ export default async function ClarityDetailPage({
           maxValue={100}
           label="Scroll depth"
           sublabel="平均スクロール到達度"
-          format="score"
+          format="scorePercent"
           thresholds={[30, 60]}
           description="ページをどこまで読んだかの平均"
         />

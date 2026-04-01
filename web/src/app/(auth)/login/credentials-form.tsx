@@ -32,8 +32,8 @@ export function CredentialsForm() {
       return;
     }
 
+    sessionStorage.setItem("nis-just-logged-in", "1");
     router.push("/");
-    router.refresh();
   }
 
   return (
