@@ -5,4 +5,5 @@ export const tableNames = {
   clarityDaily: process.env.NIS_TABLE_CLARITY_DAILY ?? "nis-clarity-daily",
   insights: process.env.NIS_TABLE_INSIGHTS ?? "nis-insights",
   users: process.env.NIS_TABLE_USERS ?? "nis-users",
+  kwDatasets: process.env.NIS_TABLE_KW_DATASETS ?? "nis-kw-datasets",
 };

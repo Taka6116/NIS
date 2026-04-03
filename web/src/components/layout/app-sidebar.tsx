@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils";
 import {
   BarChart3,
+  FileSearch,
   FolderKanban,
   Globe,
   LayoutDashboard,
@@ -40,6 +41,12 @@ const items = (projectId: string) =>
       label: "SEO パフォーマンス",
       icon: Search,
       match: (p: string) => p.startsWith(`/projects/${projectId}/seo`),
+    },
+    {
+      href: `/projects/${projectId}/keywords`,
+      label: "KW分析",
+      icon: FileSearch,
+      match: (p: string) => p.startsWith(`/projects/${projectId}/keywords`),
     },
     {
       href: `/projects/${projectId}/traffic`,

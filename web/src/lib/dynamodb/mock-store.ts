@@ -1,4 +1,5 @@
 import type {
+  AhrefsDataset,
   ClarityDailyRow,
   Ga4DailyRow,
   GscDailyRow,
@@ -14,6 +15,7 @@ class MockStore {
   clarity = new Map<string, ClarityDailyRow>();
   insights = new Map<string, InsightRecord>();
   users = new Map<string, UserRecord>();
+  kwDatasets = new Map<string, AhrefsDataset>();
 }
 
 const globalKey = "__nis_mock_store__" as const;
@@ -42,5 +44,8 @@ export const mockStore = {
   },
   get users() {
     return getStore().users;
+  },
+  get kwDatasets() {
+    return getStore().kwDatasets;
   },
 };

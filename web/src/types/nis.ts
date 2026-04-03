@@ -176,3 +176,46 @@ export type UserRecord = {
   projectIds: string[];
   status?: "active" | "offline";
 };
+
+/* ── KW分析（Ahrefs CSV） ── */
+
+export type AhrefsDatasetType = "keywords" | "organic";
+
+export type AhrefsKeywordRow = {
+  keyword: string;
+  volume: number;
+  kd: number;
+  cpc: number;
+  cps: number;
+  parentTopic: string;
+  svTrend: number[];
+  category: string;
+  trafficPotential: number;
+  globalVolume: number;
+  intents: string;
+  position: number | null;
+  url: string;
+  currentTraffic: number | null;
+  trafficChange: number | null;
+  branded: boolean;
+  serpFeatures: string;
+};
+
+export type PriorityLevel = 3 | 2 | 1 | 0;
+
+export type ScoredKeyword = AhrefsKeywordRow & {
+  opportunityScore: number;
+  priority: PriorityLevel;
+  trend: "up" | "down" | "stable";
+  trendChangePercent: number;
+};
+
+export type AhrefsDataset = {
+  id: string;
+  projectId: string;
+  uploadedAt: string;
+  fileName: string;
+  rowCount: number;
+  type: AhrefsDatasetType;
+  keywords: AhrefsKeywordRow[];
+};
