@@ -3,10 +3,12 @@
 import { cn } from "@/lib/utils";
 import {
   BarChart3,
+  Bell,
   FileSearch,
   FolderKanban,
   Globe,
   LayoutDashboard,
+  ListTodo,
   MousePointer2,
   Plug,
   FileBarChart,
@@ -65,6 +67,18 @@ const items = (projectId: string) =>
       label: "デバイス & 地域",
       icon: Globe,
       match: (p: string) => p.startsWith(`/projects/${projectId}/devices`),
+    },
+    {
+      href: `/projects/${projectId}/actions`,
+      label: "打ち手トラッキング",
+      icon: ListTodo,
+      match: (p: string) => p.startsWith(`/projects/${projectId}/actions`),
+    },
+    {
+      href: `/projects/${projectId}/alerts`,
+      label: "アラート",
+      icon: Bell,
+      match: (p: string) => p.startsWith(`/projects/${projectId}/alerts`),
     },
     {
       href: `/projects/${projectId}/reports`,

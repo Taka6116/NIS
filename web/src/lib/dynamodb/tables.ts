@@ -6,4 +6,10 @@ export const tableNames = {
   insights: process.env.NIS_TABLE_INSIGHTS ?? "nis-insights",
   users: process.env.NIS_TABLE_USERS ?? "nis-users",
   kwDatasets: process.env.NIS_TABLE_KW_DATASETS ?? "nis-kw-datasets",
+  /** B1: 打ち手トラッキング */
+  actionTracking: process.env.NIS_TABLE_ACTION_TRACKING ?? "nis-action-tracking",
+  /** B8: アラート閾値設定 */
+  projectAlerts: process.env.NIS_TABLE_PROJECT_ALERTS ?? "nis-project-alerts",
+  /** B7: 共有トークンインデックス（token → projectId,sk） */
+  insightShares: process.env.NIS_TABLE_INSIGHT_SHARES ?? "nis-insight-shares",
 };

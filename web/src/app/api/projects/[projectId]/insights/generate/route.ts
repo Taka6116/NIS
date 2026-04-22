@@ -1,6 +1,7 @@
 import {
   runInsightGeneration,
   type InsightProvider,
+  type InsightSegmentInput,
   type InsightWindowInput,
 } from "@/lib/insights/run-generate";
 import { getSessionUserRole, requireSession, isAuthError } from "@/lib/rbac";
@@ -25,6 +26,19 @@ function parseWindow(body: unknown): InsightWindowInput | undefined {
   };
 }
 
+function parseSegment(body: unknown): InsightSegmentInput | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const s = (body as { segment?: unknown }).segment;
+  if (!s || typeof s !== "object") return undefined;
+  const raw = s as Record<string, unknown>;
+  const out: InsightSegmentInput = {};
+  if (typeof raw.urlPrefix === "string") out.urlPrefix = raw.urlPrefix;
+  if (typeof raw.channel === "string") out.channel = raw.channel;
+  if (typeof raw.country === "string") out.country = raw.country;
+  if (typeof raw.deviceCategory === "string") out.deviceCategory = raw.deviceCategory;
+  return Object.keys(out).length ? out : undefined;
+}
+
 export async function POST(req: Request, ctx: { params: Promise<{ projectId: string }> }) {
   try {
     await requireSession();
@@ -39,15 +53,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ projectId: str
   const { projectId } = await ctx.params;
   let provider: InsightProvider = "gemini";
   let windowInput: InsightWindowInput | undefined;
+  let segment: InsightSegmentInput | undefined;
   try {
     const json = (await req.json()) as unknown;
     provider = parseProvider(json);
     windowInput = parseWindow(json);
+    segment = parseSegment(json);
   } catch {
     /* empty body */
   }
   try {
-    const row = await runInsightGeneration(projectId, { provider, window: windowInput });
+    const row = await runInsightGeneration(projectId, { provider, window: windowInput, segment });
     return Response.json({
       insightId: encodeURIComponent(row.sk),
       status: "ok",

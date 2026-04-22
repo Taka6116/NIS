@@ -1,34 +1,44 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import type { RuleAlert } from "@/lib/insights/rules";
 import {
+  applyStage45,
   cleanJsonText,
   isStage1,
   isStage2,
   isStage3,
   isStage4,
+  isStage45,
   normalizeAction,
+  normalizeDoNotDo,
+  normalizeFact,
   normalizeHypothesis,
+  normalizeTalkingPoints,
+  type Stage3Payload,
+  type Stage45Payload,
 } from "@/lib/insights/pipeline-stage-guards";
 import {
   STAGE1_SYSTEM,
   STAGE2_SYSTEM,
   STAGE3_SYSTEM,
+  STAGE3_MERGER_SYSTEM,
   STAGE4_SYSTEM,
+  STAGE4_5_SYSTEM,
   buildMetricsBlock,
+  buildStage3SystemForPersona,
+  buildStage3UserContent,
 } from "@/lib/insights/stage-prompts";
 import type { KpiSnapshot } from "@/lib/metrics/aggregate";
 import type {
   InsightActionItem,
+  InsightDoNotDo,
   InsightFact,
   InsightHypothesisItem,
   InsightIssue,
   InsightPipeline,
+  InsightRecord,
+  InsightSegment,
+  InsightTalkingPoints,
 } from "@/types/nis";
-
-/**
- * Bedrock 経由で Claude を直接呼ぶ。Next.js サーバランタイム（Vercel）から実行する想定。
- * 4 段階パイプラインを 1 ショット（全段）/ Stage1-2 / Stage3-4 で呼び出せるよう関数を分割。
- */
 
 export type ClaudeBedrockInput = {
   projectName: string;
@@ -44,12 +54,20 @@ export type ClaudeBedrockInput = {
   previousStart?: string;
   previousEnd?: string;
   comparison?: "previous" | "yoy";
+  segment?: InsightSegment;
+  historicalInsights?: InsightRecord[];
+  /** A2: Multi-persona を有効化するか（デフォルト true） */
+  multiPersona?: boolean;
+  /** A3: Self-critique Stage4.5 を有効化するか（デフォルト true） */
+  selfCritique?: boolean;
 };
 
 export type ClaudeBedrockResult = {
   pipeline: InsightPipeline;
   summary: string;
   topPriority: { action: string; reason: string };
+  doNotDo?: InsightDoNotDo[];
+  talkingPoints?: InsightTalkingPoints;
   rawJoined: string;
   modelId: string;
   tokenUsage?: number;
@@ -73,6 +91,8 @@ export type ClaudeStage34Result = {
   actions: InsightActionItem[];
   summary: string;
   topPriority: { action: string; reason: string };
+  doNotDo?: InsightDoNotDo[];
+  talkingPoints?: InsightTalkingPoints;
   rawJoined: string;
   modelId: string;
   tokenUsage?: number;
@@ -103,12 +123,13 @@ async function invokeStage<T>(
   userContent: string,
   guard: (o: unknown) => o is T,
   stageLabel: string,
+  opts?: { maxTokens?: number; temperature?: number },
 ): Promise<{ data: T; raw: string; tokens?: number }> {
   const run = async (content: string) => {
     const body = {
       anthropic_version: "bedrock-2023-05-31",
-      max_tokens: 8192,
-      temperature: 0.2,
+      max_tokens: opts?.maxTokens ?? 8192,
+      temperature: opts?.temperature ?? 0.2,
       system,
       messages: [{ role: "user", content }],
     };
@@ -156,19 +177,20 @@ function sumTokens(...arr: Array<number | undefined>): number | undefined {
   return defined.length ? defined.reduce((a, b) => a + b, 0) : undefined;
 }
 
-function joinRaws(raws: Array<{ stage: number; raw: string }>): string {
-  return raws.map((r) => `--- stage ${r.stage} ---\n${r.raw}`).join("\n\n");
+function joinRaws(raws: Array<{ stage: string; raw: string }>): string {
+  return raws.map((r) => `--- ${r.stage} ---\n${r.raw}`).join("\n\n");
 }
 
-/** Stage 1 + 2 のみ実行（Draft 用） */
 export async function invokeInsightClaudeStage12(input: ClaudeBedrockInput): Promise<ClaudeStage12Result> {
   const { client, modelId } = resolveClient();
   const metricsBlock = buildMetricsBlock(input);
   const s1 = await invokeStage(client, modelId, STAGE1_SYSTEM, metricsBlock, isStage1, "stage1");
 
+  const normalizedFacts = s1.data.facts.map(normalizeFact);
+
   const user2 = [
     "=== Stage1 出力（facts） ===",
-    JSON.stringify({ facts: s1.data.facts }, null, 2),
+    JSON.stringify({ facts: normalizedFacts }, null, 2),
     "",
     "=== 参考（メトリクス要約） ===",
     `期間: ${input.periodLabel}。変化率キー例: ${Object.keys(input.change || {}).slice(0, 12).join(", ")}`,
@@ -176,58 +198,159 @@ export async function invokeInsightClaudeStage12(input: ClaudeBedrockInput): Pro
   const s2 = await invokeStage(client, modelId, STAGE2_SYSTEM, user2, isStage2, "stage2");
 
   return {
-    facts: s1.data.facts,
+    facts: normalizedFacts,
     issues: s2.data.issues,
     rawJoined: joinRaws([
-      { stage: 1, raw: s1.raw },
-      { stage: 2, raw: s2.raw },
+      { stage: "stage 1", raw: s1.raw },
+      { stage: "stage 2", raw: s2.raw },
     ]),
     modelId,
     tokenUsage: sumTokens(s1.tokens, s2.tokens),
   };
 }
 
-/** Stage 3 + 4 のみ実行（Draft レビュー後の最終化用） */
+async function runStage3MultiPersona(
+  client: BedrockRuntimeClient,
+  modelId: string,
+  userContent: string,
+  knownFactIds: Set<string>,
+): Promise<{ hypotheses: InsightHypothesisItem[]; raws: Array<{ stage: string; raw: string }>; tokens?: number }> {
+  const personas: Array<"seo-lead" | "ux-researcher" | "cro-specialist"> = [
+    "seo-lead",
+    "ux-researcher",
+    "cro-specialist",
+  ];
+  const raws: Array<{ stage: string; raw: string }> = [];
+  const tokensAll: Array<number | undefined> = [];
+  const perPersona: Stage3Payload[] = [];
+  for (const p of personas) {
+    const r = await invokeStage(
+      client,
+      modelId,
+      buildStage3SystemForPersona(p),
+      userContent,
+      isStage3,
+      `stage3:${p}`,
+    );
+    raws.push({ stage: `stage 3 ${p}`, raw: r.raw });
+    tokensAll.push(r.tokens);
+    perPersona.push({
+      hypotheses: r.data.hypotheses.map((h) => ({ ...h, persona: p })),
+    });
+  }
+
+  // Merger
+  const merged = await invokeStage(
+    client,
+    modelId,
+    STAGE3_MERGER_SYSTEM,
+    [
+      "=== 各ペルソナの仮説 ===",
+      JSON.stringify(
+        {
+          perPersona: perPersona.map((p, i) => ({ persona: personas[i], ...p })),
+        },
+        null,
+        2,
+      ),
+    ].join("\n"),
+    isStage3,
+    "stage3:merger",
+  );
+  raws.push({ stage: "stage 3 merger", raw: merged.raw });
+  tokensAll.push(merged.tokens);
+
+  const hypotheses = merged.data.hypotheses.map((h) =>
+    normalizeHypothesis({ ...h, persona: h.persona ?? "merged" }, knownFactIds),
+  );
+  return { hypotheses, raws, tokens: sumTokens(...tokensAll) };
+}
+
 export async function invokeInsightClaudeStage34(input: ClaudeStage34Input): Promise<ClaudeStage34Result> {
   const { client, modelId } = resolveClient();
+  const knownFactIds = new Set(input.facts.map((f) => f.id));
+  const user3 = buildStage3UserContent({
+    facts: input.facts,
+    issues: input.issues,
+    currentStart: input.currentStart,
+    currentEnd: input.currentEnd,
+    previousStart: input.previousStart,
+    previousEnd: input.previousEnd,
+    comparison: input.comparison,
+    historicalInsights: input.historicalInsights,
+  });
 
-  const user3 = [
+  const raws: Array<{ stage: string; raw: string }> = [];
+  const tokens: Array<number | undefined> = [];
+
+  let hypotheses: InsightHypothesisItem[];
+  if (input.multiPersona !== false) {
+    const mp = await runStage3MultiPersona(client, modelId, user3, knownFactIds);
+    hypotheses = mp.hypotheses;
+    raws.push(...mp.raws);
+    tokens.push(mp.tokens);
+  } else {
+    const s3 = await invokeStage(client, modelId, STAGE3_SYSTEM, user3, isStage3, "stage3");
+    raws.push({ stage: "stage 3", raw: s3.raw });
+    tokens.push(s3.tokens);
+    hypotheses = s3.data.hypotheses.map((h) => normalizeHypothesis({ ...h, persona: h.persona ?? "merged" }, knownFactIds));
+  }
+
+  const user4 = [
     "=== Stage1 facts ===",
     JSON.stringify({ facts: input.facts }, null, 2),
     "",
     "=== Stage2 issues（ユーザー編集済み） ===",
     JSON.stringify({ issues: input.issues }, null, 2),
     "",
-    "=== 期間情報 ===",
-    input.currentStart && input.currentEnd ? `今期: ${input.currentStart}〜${input.currentEnd}` : "",
-    input.previousStart && input.previousEnd
-      ? `比較（${input.comparison === "yoy" ? "前年同期" : "直前期間"}）: ${input.previousStart}〜${input.previousEnd}`
-      : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-  const s3 = await invokeStage(client, modelId, STAGE3_SYSTEM, user3, isStage3, "stage3");
-
-  const user4 = [
-    "=== Stage2 issues（ユーザー編集済み） ===",
-    JSON.stringify({ issues: input.issues }, null, 2),
-    "",
     "=== Stage3 hypotheses ===",
-    JSON.stringify({ hypotheses: s3.data.hypotheses }, null, 2),
+    JSON.stringify({ hypotheses }, null, 2),
   ].join("\n");
   const s4 = await invokeStage(client, modelId, STAGE4_SYSTEM, user4, isStage4, "stage4");
+  raws.push({ stage: "stage 4", raw: s4.raw });
+  tokens.push(s4.tokens);
+
+  let actions = s4.data.actions.map((a) => normalizeAction(a, knownFactIds));
+  let doNotDo = normalizeDoNotDo(s4.data.doNotDo);
+  const talkingPoints = normalizeTalkingPoints(s4.data.talkingPoints);
+
+  if (input.selfCritique !== false) {
+    try {
+      const s45user = [
+        "=== 現在の actions ===",
+        JSON.stringify({ actions }, null, 2),
+      ].join("\n");
+      const s45 = await invokeStage<Stage45Payload>(
+        client,
+        modelId,
+        STAGE4_5_SYSTEM,
+        s45user,
+        isStage45,
+        "stage4.5",
+      );
+      raws.push({ stage: "stage 4.5", raw: s45.raw });
+      tokens.push(s45.tokens);
+      const merged = applyStage45(actions, s45.data);
+      actions = merged.actions;
+      if (merged.additionalDoNotDo && merged.additionalDoNotDo.length) {
+        doNotDo = [...(doNotDo ?? []), ...merged.additionalDoNotDo];
+      }
+    } catch (e) {
+      // Self-critique 失敗は致命ではないので握る
+      raws.push({ stage: "stage 4.5", raw: `error: ${e instanceof Error ? e.message : String(e)}` });
+    }
+  }
 
   return {
-    hypotheses: s3.data.hypotheses.map(normalizeHypothesis),
-    actions: s4.data.actions.map(normalizeAction),
+    hypotheses,
+    actions,
     summary: s4.data.summary,
     topPriority: s4.data.topPriority,
-    rawJoined: joinRaws([
-      { stage: 3, raw: s3.raw },
-      { stage: 4, raw: s4.raw },
-    ]),
+    doNotDo,
+    talkingPoints,
+    rawJoined: joinRaws(raws),
     modelId,
-    tokenUsage: sumTokens(s3.tokens, s4.tokens),
+    tokenUsage: sumTokens(...tokens),
   };
 }
 
@@ -248,6 +371,8 @@ export async function invokeInsightClaudeBedrock(input: ClaudeBedrockInput): Pro
     },
     summary: stage34.summary,
     topPriority: stage34.topPriority,
+    doNotDo: stage34.doNotDo,
+    talkingPoints: stage34.talkingPoints,
     rawJoined: `${stage12.rawJoined}\n\n${stage34.rawJoined}`,
     modelId: stage34.modelId,
     tokenUsage: sumTokens(stage12.tokenUsage, stage34.tokenUsage),

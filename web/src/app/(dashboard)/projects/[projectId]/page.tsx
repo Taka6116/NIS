@@ -16,6 +16,7 @@ import {
   getTimeseriesForDates,
 } from "@/lib/metrics/aggregate";
 import { ChannelMixPie } from "@/components/dashboard/channel-mix-pie";
+import { AnomalyCard } from "@/components/insights/anomaly-card";
 import {
   buildIntelligenceQuery,
   buildMetricsRangeQuery,
@@ -255,6 +256,8 @@ export default async function IntelligencePage({
             </div>
           </Card>
         </div>
+
+        <AnomalyCard projectId={projectId} />
 
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-2">

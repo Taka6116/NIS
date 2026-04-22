@@ -1,4 +1,4 @@
-import { runInsightDraft, type InsightProvider, type InsightWindowInput } from "@/lib/insights/run-generate";
+import { runInsightDraft, type InsightProvider, type InsightSegmentInput, type InsightWindowInput } from "@/lib/insights/run-generate";
 import { resolveMetricsWindow } from "@/lib/metrics/date-range";
 import { getSessionUserRole, requireSession, isAuthError } from "@/lib/rbac";
 
@@ -22,6 +22,19 @@ function parseWindow(body: unknown): InsightWindowInput | undefined {
   };
 }
 
+function parseSegment(body: unknown): InsightSegmentInput | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const s = (body as { segment?: unknown }).segment;
+  if (!s || typeof s !== "object") return undefined;
+  const raw = s as Record<string, unknown>;
+  const out: InsightSegmentInput = {};
+  if (typeof raw.urlPrefix === "string") out.urlPrefix = raw.urlPrefix;
+  if (typeof raw.channel === "string") out.channel = raw.channel;
+  if (typeof raw.country === "string") out.country = raw.country;
+  if (typeof raw.deviceCategory === "string") out.deviceCategory = raw.deviceCategory;
+  return Object.keys(out).length ? out : undefined;
+}
+
 export async function POST(req: Request, ctx: { params: Promise<{ projectId: string }> }) {
   try {
     await requireSession();
@@ -37,10 +50,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ projectId: str
 
   let provider: InsightProvider = "gemini";
   let windowInput: InsightWindowInput | undefined;
+  let segment: InsightSegmentInput | undefined;
   try {
     const json = (await req.json()) as unknown;
     provider = parseProvider(json);
     windowInput = parseWindow(json);
+    segment = parseSegment(json);
   } catch {
     /* empty body */
   }
@@ -54,7 +69,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ projectId: str
   if (!wr.ok) return Response.json({ error: wr.error }, { status: 400 });
 
   try {
-    const draft = await runInsightDraft(projectId, wr.window, provider);
+    const draft = await runInsightDraft(projectId, wr.window, provider, { segment });
     return Response.json({
       draftId: encodeURIComponent(draft.draftId),
       status: "ok",

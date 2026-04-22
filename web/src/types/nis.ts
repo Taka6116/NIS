@@ -102,6 +102,20 @@ export type InsightFinding = {
   supportingData?: Record<string, unknown>;
 };
 
+/** 季節性ヒント（A8）。Stage1 が YoY / 前期 / トレンドから判定したクラス分け。 */
+export type InsightSeasonalityKind =
+  | "trend"
+  | "seasonal"
+  | "residual"
+  | "unknown";
+
+export type InsightSeasonalityHint = {
+  kind: InsightSeasonalityKind;
+  /** 何 % を季節性で説明できるか（0-1）。推定で可。 */
+  seasonalShare?: number;
+  note?: string;
+};
+
 /** ①現状整理（事実のみ。解釈・原因・推奨を書かない） */
 export type InsightFact = {
   id: string;
@@ -109,6 +123,8 @@ export type InsightFact = {
   metricRef?: string;
   valueText?: string;
   source?: "gsc" | "ga4" | "clarity" | "rule";
+  /** A8: 季節性 / トレンド / 残差のラベル（LLM が任意で付ける） */
+  seasonalityHint?: InsightSeasonalityHint;
 };
 
 /** ②課題 */
@@ -132,6 +148,13 @@ export type InsightFactorCategory =
   | "tracking"
   | "seasonality-external";
 
+/** A5: データ確実性レベル（4 段階 calibration） */
+export type InsightDataCertainty =
+  | "observed"
+  | "single-signal-inferred"
+  | "multi-signal-inferred"
+  | "speculative";
+
 /** ③示唆・仮説 */
 export type InsightHypothesisItem = {
   id: string;
@@ -150,6 +173,12 @@ export type InsightHypothesisItem = {
   mechanism?: string;
   /** 低コスト検証手段 */
   nextValidationStep?: string;
+  /** A5: データ確実性の 4 段階 */
+  dataCertainty?: InsightDataCertainty;
+  /** A1: 参照している fact.id（ハルシネーション抑止） */
+  evidenceRefs?: string[];
+  /** A2: 生成したペルソナ（SEO / UX / CRO / merged 等） */
+  persona?: string;
 };
 
 /** ④打ち手タイプ */
@@ -174,6 +203,36 @@ export type InsightIceScore = {
   score: number;
 };
 
+/** A7: Counterfactual KPI 予測（4/8/12 週） */
+export type InsightProjectionPoint = {
+  horizonWeeks: 4 | 8 | 12;
+  /** セッション変化（絶対値 or 近似。LLM が `+2500` や `-1200` 等で出す想定） */
+  sessionsDelta: number;
+  /** 任意: クリック/CV 等、任意指標の変化 */
+  deltaByMetric?: Record<string, number>;
+  confidence: "low" | "medium" | "high";
+};
+
+export type InsightProjectedImpact = {
+  ifImplemented: InsightProjectionPoint[];
+  ifNotImplemented: InsightProjectionPoint[];
+  note?: string;
+};
+
+/** A3 Stage4.5 による批評メモ */
+export type InsightCritique = {
+  persona: "cfo" | "cmo" | "skeptic";
+  criticism: string;
+  suggestedAdjust?: string;
+};
+
+/** B1: 打ち手ステータス（Kanban） */
+export type InsightActionStatus =
+  | "todo"
+  | "in-progress"
+  | "done"
+  | "rejected";
+
 /** ④打ち手 */
 export type InsightActionItem = {
   id: string;
@@ -194,6 +253,52 @@ export type InsightActionItem = {
   ice?: InsightIceScore;
   /** 副作用・リスク */
   risks?: string[];
+  /** A1: 根拠 fact.id */
+  evidenceRefs?: string[];
+  /** A7: 実施/非実施 Counterfactual */
+  projectedImpact?: InsightProjectedImpact;
+  /** A3 Stage4.5: 懐疑視点の批評 */
+  critiques?: InsightCritique[];
+};
+
+/** A6: Not-to-do リスト */
+export type InsightDoNotDo = {
+  id: string;
+  title: string;
+  reason: string;
+  /** 実行した場合のリスク。LLM に説明させる。 */
+  riskIfDone?: string;
+};
+
+/** B6: プレゼン粒度別の台本 */
+export type InsightTalkingPoints = {
+  /** エグゼクティブ 3 行 */
+  executive3Line: string;
+  /** 5 分版 */
+  fiveMinute?: string;
+  /** 15 分版 */
+  fifteenMinute?: string;
+  /** 30 分版 */
+  thirtyMinute?: string;
+};
+
+/** B2: 前回比の差分（issue 単位） */
+export type InsightDiffVsPrevious = {
+  prevInsightSk?: string;
+  newIssueIds: string[];
+  resolvedIssueIds: string[];
+  /** 前回の同名 issue の severity より悪化した */
+  worsenedIssueIds: string[];
+  /** 継続中（前回と同じ or 解消未確定） */
+  persistingIssueIds: string[];
+};
+
+/** B5: 分析スコープ（セグメント） */
+export type InsightSegment = {
+  urlPrefix?: string;
+  channel?: string;
+  country?: string;
+  deviceCategory?: string;
 };
 
 export type InsightPipeline = {
@@ -219,6 +324,61 @@ export type InsightRecord = {
   modelVersion?: string;
   tokenUsage?: number;
   generatedAtIso: string;
+  /** A6: Not-to-do リスト */
+  doNotDo?: InsightDoNotDo[];
+  /** B6: 台本の粒度別バリエーション */
+  talkingPoints?: InsightTalkingPoints;
+  /** B2: 前回との差分 */
+  diffVsPrevious?: InsightDiffVsPrevious;
+  /** B5: 分析スコープ（未設定はサイト全体） */
+  segment?: InsightSegment;
+  /** B7: 外部共有トークン（公開 URL 用。発行済みのみ存在） */
+  shareToken?: string;
+  /** 比較モード */
+  comparison?: "previous" | "yoy";
+  /** 比較期間 */
+  previousPeriod?: { start: string; end: string };
+};
+
+/** B1: 打ち手トラッキング（1 action 1 row。テーブル: nis-action-tracking） */
+export type ActionTrackingRecord = {
+  projectId: string;
+  /** sk: `${insightSk}#${actionId}` */
+  sk: string;
+  insightSk: string;
+  actionId: string;
+  actionTitle: string;
+  status: InsightActionStatus;
+  updatedAtIso: string;
+  updatedBy?: string;
+  implementedAtIso?: string;
+  /** 実施後の実績メモ */
+  actualImpactNote?: string;
+  /** 実施後の実績指標（任意） */
+  actualMetrics?: Record<string, number>;
+};
+
+/** B8: プロジェクト単位アラート設定（nis-project-alerts） */
+export type ProjectAlertConfig = {
+  projectId: string;
+  sk: "config";
+  enabled: boolean;
+  /** 監視する指標 */
+  rules: Array<{
+    id: string;
+    metric: string;
+    /** 'drop_pct' は変化率（下落%）、'delta_pt' は pt 変化 */
+    operator: "drop_pct" | "rise_pct" | "delta_pt";
+    threshold: number;
+    /** window: 'd7' / 'd28' */
+    window: "d7" | "d28";
+    severity: "high" | "medium" | "low";
+  }>;
+  /** Slack incoming webhook */
+  slackWebhookUrl?: string;
+  /** アラート発火時に自動で Step1 Draft を起動するか */
+  autoTriggerDraft?: boolean;
+  updatedAtIso: string;
 };
 
 /** Draft レコード（Stage1-2 だけ走った中間状態）。nis-insights テーブルに `sk = "{iso}#draft"` で保存。 */
@@ -239,6 +399,8 @@ export type InsightDraftRecord = {
   generatedAtIso: string;
   /** DynamoDB TTL 用（epoch seconds） */
   expiresAt: number;
+  /** B5: 分析スコープ */
+  segment?: InsightSegment;
 };
 
 export type UserRecord = {
