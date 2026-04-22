@@ -33,7 +33,7 @@ export default async function InsightDetailPage({
       <AppHeader
         title="Insight detail"
         subtitle={`${insight.type} — ${insight.period.start} 〜 ${insight.period.end}${
-          insight.modelProvider ? ` — ${insight.modelProvider === "claude" ? "Claude (Lambda)" : "Gemini"}${insight.modelVersion ? ` · ${insight.modelVersion}` : ""}` : ""
+          insight.modelProvider ? ` — ${insight.modelProvider === "claude" ? "Claude (Bedrock)" : "Gemini"}${insight.modelVersion ? ` · ${insight.modelVersion}` : ""}` : ""
         }`}
         userEmail={session?.user?.email}
       />

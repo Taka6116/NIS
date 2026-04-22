@@ -121,6 +121,17 @@ export type InsightIssue = {
   category: "seo" | "traffic" | "ux" | "conversion";
 };
 
+/** 要因カテゴリ。SEO 監査フレームの 5 階層 + NIS 独自の UX・計測・外部要因。 */
+export type InsightFactorCategory =
+  | "crawl-index"
+  | "technical"
+  | "on-page"
+  | "content-quality"
+  | "authority"
+  | "ux-clarity"
+  | "tracking"
+  | "seasonality-external";
+
 /** ③示唆・仮説 */
 export type InsightHypothesisItem = {
   id: string;
@@ -129,6 +140,38 @@ export type InsightHypothesisItem = {
   /** データが示す事実と、解釈・仮説の区別 */
   dataSupport: string;
   confidence: "high" | "medium" | "low";
+  /** 要因分類（SEO 監査フレーム） */
+  factorCategory?: InsightFactorCategory;
+  /** 自社改善可能な要因 */
+  internalFactors?: string[];
+  /** 自社改善不可な外部要因（競合/季節/アルゴリズム等） */
+  externalFactors?: string[];
+  /** 因果チェーン（例: CTR -2.85pt → クリック -98.4% → セッション -71.6%） */
+  mechanism?: string;
+  /** 低コスト検証手段 */
+  nextValidationStep?: string;
+};
+
+/** ④打ち手タイプ */
+export type InsightActionType = "quick-win" | "strategic" | "structural";
+
+export type InsightTargetKpi = {
+  metric: string;
+  direction: "up" | "down";
+  /** 相対または絶対値の目標（例: "+15%" / "+200 clicks/日"） */
+  targetDelta: string;
+  timelineWeeks: number;
+};
+
+export type InsightIceScore = {
+  /** 1〜10 */
+  impact: number;
+  /** 1〜10 */
+  confidence: number;
+  /** 1〜10 */
+  ease: number;
+  /** Impact × Confidence × Ease / 10（= 0〜100） */
+  score: number;
 };
 
 /** ④打ち手 */
@@ -141,6 +184,16 @@ export type InsightActionItem = {
   effort: string;
   expectedImpact: string;
   steps: string[];
+  /** 打ち手タイプ。type ごとに最低 1 件推奨 */
+  type?: InsightActionType;
+  /** 紐付ける KPI と目標 */
+  targetKpi?: InsightTargetKpi;
+  /** 先行指標（例: GSC impressions 7 日移動平均） */
+  leadIndicator?: string;
+  /** ICE スコア */
+  ice?: InsightIceScore;
+  /** 副作用・リスク */
+  risks?: string[];
 };
 
 export type InsightPipeline = {
@@ -166,6 +219,26 @@ export type InsightRecord = {
   modelVersion?: string;
   tokenUsage?: number;
   generatedAtIso: string;
+};
+
+/** Draft レコード（Stage1-2 だけ走った中間状態）。nis-insights テーブルに `sk = "{iso}#draft"` で保存。 */
+export type InsightDraftRecord = {
+  projectId: string;
+  sk: string;
+  draftId: string;
+  type: "draft";
+  period: { start: string; end: string };
+  comparison: "previous" | "yoy";
+  previousPeriod: { start: string; end: string };
+  facts: InsightFact[];
+  issues: InsightIssue[];
+  modelProvider: "gemini" | "claude";
+  modelVersion: string;
+  rawPrompt?: string;
+  tokenUsage?: number;
+  generatedAtIso: string;
+  /** DynamoDB TTL 用（epoch seconds） */
+  expiresAt: number;
 };
 
 export type UserRecord = {

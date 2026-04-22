@@ -3,6 +3,7 @@ import type {
   ClarityDailyRow,
   Ga4DailyRow,
   GscDailyRow,
+  InsightDraftRecord,
   InsightRecord,
   ProjectRecord,
   UserRecord,
@@ -14,6 +15,7 @@ class MockStore {
   ga4 = new Map<string, Ga4DailyRow>();
   clarity = new Map<string, ClarityDailyRow>();
   insights = new Map<string, InsightRecord>();
+  insightDrafts = new Map<string, InsightDraftRecord>();
   users = new Map<string, UserRecord>();
   kwDatasets = new Map<string, AhrefsDataset>();
 }
@@ -41,6 +43,9 @@ export const mockStore = {
   },
   get insights() {
     return getStore().insights;
+  },
+  get insightDrafts() {
+    return getStore().insightDrafts;
   },
   get users() {
     return getStore().users;

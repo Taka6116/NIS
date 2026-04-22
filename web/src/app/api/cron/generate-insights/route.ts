@@ -17,7 +17,10 @@ export async function POST(req: Request) {
   const errors: string[] = [];
   for (const p of projects) {
     try {
-      await runInsightGeneration(p.projectId);
+      // Cron は 1 ショット互換モード: 28 日・直前期間比較で動作させる。
+      await runInsightGeneration(p.projectId, {
+        window: { range: "28d", comparison: "previous" },
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`${p.projectId}: ${msg}`);

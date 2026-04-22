@@ -1,8 +1,5 @@
-import {
-  runInsightGeneration,
-  type InsightProvider,
-  type InsightWindowInput,
-} from "@/lib/insights/run-generate";
+import { runInsightDraft, type InsightProvider, type InsightWindowInput } from "@/lib/insights/run-generate";
+import { resolveMetricsWindow } from "@/lib/metrics/date-range";
 import { getSessionUserRole, requireSession, isAuthError } from "@/lib/rbac";
 
 function parseProvider(body: unknown): InsightProvider {
@@ -37,6 +34,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ projectId: str
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
   const { projectId } = await ctx.params;
+
   let provider: InsightProvider = "gemini";
   let windowInput: InsightWindowInput | undefined;
   try {
@@ -46,13 +44,26 @@ export async function POST(req: Request, ctx: { params: Promise<{ projectId: str
   } catch {
     /* empty body */
   }
+
+  const wr = resolveMetricsWindow({
+    from: windowInput?.from,
+    to: windowInput?.to,
+    range: windowInput?.range ?? "28d",
+    comparison: windowInput?.comparison ?? "previous",
+  });
+  if (!wr.ok) return Response.json({ error: wr.error }, { status: 400 });
+
   try {
-    const row = await runInsightGeneration(projectId, { provider, window: windowInput });
+    const draft = await runInsightDraft(projectId, wr.window, provider);
     return Response.json({
-      insightId: encodeURIComponent(row.sk),
+      draftId: encodeURIComponent(draft.draftId),
       status: "ok",
-      summary: row.summary,
-      provider: row.modelProvider,
+      facts: draft.facts,
+      issues: draft.issues,
+      period: draft.period,
+      previousPeriod: draft.previousPeriod,
+      comparison: draft.comparison,
+      provider: draft.modelProvider,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";

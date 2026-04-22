@@ -1,4 +1,4 @@
-import { addDays, format, parseISO, subDays } from "date-fns";
+import { addDays, format, parseISO, startOfMonth, startOfQuarter, subDays } from "date-fns";
 import { computePreviousWindow } from "@/lib/metrics/date-range";
 import type { RangeKey } from "@/lib/metrics/date-range";
 import { queryClarityByProject, queryGa4ByProject, queryGscByProjectAndDatePrefix } from "@/lib/dynamodb/repositories/metrics";
@@ -8,8 +8,24 @@ export type { RangeKey } from "@/lib/metrics/date-range";
 
 function rangeDays(key: RangeKey): number {
   if (key === "7d") return 7;
+  if (key === "28d") return 28;
   if (key === "30d") return 30;
+  if (key === "90d") return 90;
+  // MTD/QTD は月/四半期の開始から今日まで。暫定に 90 日相当として扱う（実際の窓は resolveRangeToDates で算出）。
   return 90;
+}
+
+/** RangeKey から今期の開始・終了日を決める。MTD/QTD も対応。 */
+function resolveRangeToDates(key: RangeKey): { start: string; end: string } {
+  const end = format(new Date(), "yyyy-MM-dd");
+  if (key === "MTD") {
+    return { start: format(startOfMonth(new Date()), "yyyy-MM-dd"), end };
+  }
+  if (key === "QTD") {
+    return { start: format(startOfQuarter(new Date()), "yyyy-MM-dd"), end };
+  }
+  const days = rangeDays(key);
+  return { start: format(subDays(new Date(), days - 1), "yyyy-MM-dd"), end };
 }
 
 function inRange(dateStr: string, start: string, end: string) {
@@ -266,10 +282,16 @@ export async function getMetricsBundleForDates(projectId: string, start: string,
   return buildMetricsBundleFromSpans(projectId, start, end, prevStart, prevEnd);
 }
 
+/** 今期・比較期間を明示して KPI バンドルを取得（yoy 比較などに使用） */
+export async function getMetricsBundleForWindow(
+  projectId: string,
+  window: { start: string; end: string; prevStart: string; prevEnd: string },
+) {
+  return buildMetricsBundleFromSpans(projectId, window.start, window.end, window.prevStart, window.prevEnd);
+}
+
 export async function getMetricsBundle(projectId: string, range: RangeKey) {
-  const days = rangeDays(range);
-  const end = format(new Date(), "yyyy-MM-dd");
-  const start = format(subDays(new Date(), days - 1), "yyyy-MM-dd");
+  const { start, end } = resolveRangeToDates(range);
   const { prevStart, prevEnd } = computePreviousWindow(start, end);
   return buildMetricsBundleFromSpans(projectId, start, end, prevStart, prevEnd);
 }
@@ -331,9 +353,7 @@ export async function getContributingFactorsForDates(projectId: string, start: s
 }
 
 export async function getContributingFactors(projectId: string, range: RangeKey): Promise<ContributingRow[]> {
-  const days = rangeDays(range);
-  const end = format(new Date(), "yyyy-MM-dd");
-  const start = format(subDays(new Date(), days - 1), "yyyy-MM-dd");
+  const { start, end } = resolveRangeToDates(range);
   return getContributingFactorsForDates(projectId, start, end);
 }
 
@@ -342,9 +362,10 @@ export async function getTimeseries(
   metric: "sessions" | "conversions" | "impressions" | "avgPosition",
   range: RangeKey,
 ) {
-  const days = rangeDays(range);
-  const end = new Date();
-  const start = subDays(end, days - 1);
+  const { start: startStr, end: endStr } = resolveRangeToDates(range);
+  const start = parseISO(startStr);
+  const end = parseISO(endStr);
+  const days = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
   const dates: string[] = [];
   for (let i = 0; i < days; i++) {
     dates.push(format(addDays(start, i), "yyyy-MM-dd"));

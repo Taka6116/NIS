@@ -6,6 +6,8 @@ import {
   isStage2,
   isStage3,
   isStage4,
+  normalizeAction,
+  normalizeHypothesis,
 } from "@/lib/insights/pipeline-stage-guards";
 import {
   STAGE1_SYSTEM,
@@ -15,11 +17,17 @@ import {
   buildMetricsBlock,
 } from "@/lib/insights/stage-prompts";
 import type { KpiSnapshot } from "@/lib/metrics/aggregate";
-import type { InsightPipeline } from "@/types/nis";
+import type {
+  InsightActionItem,
+  InsightFact,
+  InsightHypothesisItem,
+  InsightIssue,
+  InsightPipeline,
+} from "@/types/nis";
 
 /**
  * Bedrock 経由で Claude を直接呼ぶ。Next.js サーバランタイム（Vercel）から実行する想定。
- * 旧 lambda/insight-claude/index.mjs と同じ 4 段パイプラインを実行する。
+ * 4 段階パイプラインを 1 ショット（全段）/ Stage1-2 / Stage3-4 で呼び出せるよう関数を分割。
  */
 
 export type ClaudeBedrockInput = {
@@ -31,6 +39,11 @@ export type ClaudeBedrockInput = {
   change: Record<string, number>;
   alerts: RuleAlert[];
   clarityNote?: string;
+  currentStart?: string;
+  currentEnd?: string;
+  previousStart?: string;
+  previousEnd?: string;
+  comparison?: "previous" | "yoy";
 };
 
 export type ClaudeBedrockResult = {
@@ -42,10 +55,46 @@ export type ClaudeBedrockResult = {
   tokenUsage?: number;
 };
 
+export type ClaudeStage12Result = {
+  facts: InsightFact[];
+  issues: InsightIssue[];
+  rawJoined: string;
+  modelId: string;
+  tokenUsage?: number;
+};
+
+export type ClaudeStage34Input = ClaudeBedrockInput & {
+  facts: InsightFact[];
+  issues: InsightIssue[];
+};
+
+export type ClaudeStage34Result = {
+  hypotheses: InsightHypothesisItem[];
+  actions: InsightActionItem[];
+  summary: string;
+  topPriority: { action: string; reason: string };
+  rawJoined: string;
+  modelId: string;
+  tokenUsage?: number;
+};
+
 type BedrockClaudeResponse = {
   content?: Array<{ text?: string }>;
   usage?: { input_tokens?: number; output_tokens?: number };
 };
+
+function resolveClient(): { client: BedrockRuntimeClient; modelId: string } {
+  const modelId = process.env.BEDROCK_MODEL_ID;
+  if (!modelId?.trim()) {
+    throw new Error(
+      "BEDROCK_MODEL_ID is not set. Set it to an active Claude model or inference profile ID " +
+        "(e.g. jp.anthropic.claude-sonnet-4-5-20250929-v1:0 for Tokyo, or global.anthropic.claude-sonnet-4-5-20250929-v1:0).",
+    );
+  }
+  const region = process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "ap-northeast-1";
+  const client = new BedrockRuntimeClient({ region });
+  return { client, modelId };
+}
 
 async function invokeStage<T>(
   client: BedrockRuntimeClient,
@@ -102,19 +151,18 @@ async function invokeStage<T>(
   return { data: parsed, raw, tokens };
 }
 
-export async function invokeInsightClaudeBedrock(
-  input: ClaudeBedrockInput,
-): Promise<ClaudeBedrockResult> {
-  const modelId = process.env.BEDROCK_MODEL_ID;
-  if (!modelId?.trim()) {
-    throw new Error(
-      "BEDROCK_MODEL_ID is not set. Set it to an active Claude model or inference profile ID " +
-        "(e.g. jp.anthropic.claude-sonnet-4-5-20250929-v1:0 for Tokyo, or global.anthropic.claude-sonnet-4-5-20250929-v1:0).",
-    );
-  }
-  const region = process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "ap-northeast-1";
-  const client = new BedrockRuntimeClient({ region });
+function sumTokens(...arr: Array<number | undefined>): number | undefined {
+  const defined = arr.filter((t): t is number => typeof t === "number");
+  return defined.length ? defined.reduce((a, b) => a + b, 0) : undefined;
+}
 
+function joinRaws(raws: Array<{ stage: number; raw: string }>): string {
+  return raws.map((r) => `--- stage ${r.stage} ---\n${r.raw}`).join("\n\n");
+}
+
+/** Stage 1 + 2 のみ実行（Draft 用） */
+export async function invokeInsightClaudeStage12(input: ClaudeBedrockInput): Promise<ClaudeStage12Result> {
+  const { client, modelId } = resolveClient();
   const metricsBlock = buildMetricsBlock(input);
   const s1 = await invokeStage(client, modelId, STAGE1_SYSTEM, metricsBlock, isStage1, "stage1");
 
@@ -127,47 +175,81 @@ export async function invokeInsightClaudeBedrock(
   ].join("\n");
   const s2 = await invokeStage(client, modelId, STAGE2_SYSTEM, user2, isStage2, "stage2");
 
+  return {
+    facts: s1.data.facts,
+    issues: s2.data.issues,
+    rawJoined: joinRaws([
+      { stage: 1, raw: s1.raw },
+      { stage: 2, raw: s2.raw },
+    ]),
+    modelId,
+    tokenUsage: sumTokens(s1.tokens, s2.tokens),
+  };
+}
+
+/** Stage 3 + 4 のみ実行（Draft レビュー後の最終化用） */
+export async function invokeInsightClaudeStage34(input: ClaudeStage34Input): Promise<ClaudeStage34Result> {
+  const { client, modelId } = resolveClient();
+
   const user3 = [
     "=== Stage1 facts ===",
-    JSON.stringify({ facts: s1.data.facts }, null, 2),
+    JSON.stringify({ facts: input.facts }, null, 2),
     "",
-    "=== Stage2 issues ===",
-    JSON.stringify({ issues: s2.data.issues }, null, 2),
-  ].join("\n");
+    "=== Stage2 issues（ユーザー編集済み） ===",
+    JSON.stringify({ issues: input.issues }, null, 2),
+    "",
+    "=== 期間情報 ===",
+    input.currentStart && input.currentEnd ? `今期: ${input.currentStart}〜${input.currentEnd}` : "",
+    input.previousStart && input.previousEnd
+      ? `比較（${input.comparison === "yoy" ? "前年同期" : "直前期間"}）: ${input.previousStart}〜${input.previousEnd}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
   const s3 = await invokeStage(client, modelId, STAGE3_SYSTEM, user3, isStage3, "stage3");
 
   const user4 = [
-    "=== Stage2 issues ===",
-    JSON.stringify({ issues: s2.data.issues }, null, 2),
+    "=== Stage2 issues（ユーザー編集済み） ===",
+    JSON.stringify({ issues: input.issues }, null, 2),
     "",
     "=== Stage3 hypotheses ===",
     JSON.stringify({ hypotheses: s3.data.hypotheses }, null, 2),
   ].join("\n");
   const s4 = await invokeStage(client, modelId, STAGE4_SYSTEM, user4, isStage4, "stage4");
 
-  const tokenParts = [s1.tokens, s2.tokens, s3.tokens, s4.tokens].filter(
-    (t): t is number => typeof t === "number",
-  );
-  const tokenUsage = tokenParts.length ? tokenParts.reduce((a, b) => a + b, 0) : undefined;
+  return {
+    hypotheses: s3.data.hypotheses.map(normalizeHypothesis),
+    actions: s4.data.actions.map(normalizeAction),
+    summary: s4.data.summary,
+    topPriority: s4.data.topPriority,
+    rawJoined: joinRaws([
+      { stage: 3, raw: s3.raw },
+      { stage: 4, raw: s4.raw },
+    ]),
+    modelId,
+    tokenUsage: sumTokens(s3.tokens, s4.tokens),
+  };
+}
 
-  const rawJoined = [
-    `--- stage 1 ---\n${s1.raw}`,
-    `--- stage 2 ---\n${s2.raw}`,
-    `--- stage 3 ---\n${s3.raw}`,
-    `--- stage 4 ---\n${s4.raw}`,
-  ].join("\n\n");
+export async function invokeInsightClaudeBedrock(input: ClaudeBedrockInput): Promise<ClaudeBedrockResult> {
+  const stage12 = await invokeInsightClaudeStage12(input);
+  const stage34 = await invokeInsightClaudeStage34({
+    ...input,
+    facts: stage12.facts,
+    issues: stage12.issues,
+  });
 
   return {
     pipeline: {
-      facts: s1.data.facts,
-      issues: s2.data.issues,
-      hypotheses: s3.data.hypotheses,
-      actions: s4.data.actions,
+      facts: stage12.facts,
+      issues: stage12.issues,
+      hypotheses: stage34.hypotheses,
+      actions: stage34.actions,
     },
-    summary: s4.data.summary,
-    topPriority: s4.data.topPriority,
-    rawJoined,
-    modelId,
-    tokenUsage,
+    summary: stage34.summary,
+    topPriority: stage34.topPriority,
+    rawJoined: `${stage12.rawJoined}\n\n${stage34.rawJoined}`,
+    modelId: stage34.modelId,
+    tokenUsage: sumTokens(stage12.tokenUsage, stage34.tokenUsage),
   };
 }

@@ -11,9 +11,31 @@ function sortByConfidence<T extends { confidence: "high" | "medium" | "low" }>(i
   return [...items].sort((a, b) => CONFIDENCE_ORDER[a.confidence] - CONFIDENCE_ORDER[b.confidence]);
 }
 
-function sortByPriority<T extends { priority: "high" | "medium" | "low" }>(items: T[]): T[] {
-  return [...items].sort((a, b) => SEVERITY_ORDER[a.priority] - SEVERITY_ORDER[b.priority]);
+function sortByIceThenPriority<T extends { priority: "high" | "medium" | "low"; ice?: { score: number } }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const sa = a.ice?.score ?? -1;
+    const sb = b.ice?.score ?? -1;
+    if (sa !== sb) return sb - sa;
+    return SEVERITY_ORDER[a.priority] - SEVERITY_ORDER[b.priority];
+  });
 }
+
+const FACTOR_LABEL: Record<string, string> = {
+  "crawl-index": "クロール/インデックス",
+  technical: "テクニカル",
+  "on-page": "オンページ",
+  "content-quality": "コンテンツ品質",
+  authority: "権威性・被リンク",
+  "ux-clarity": "UX(Clarity)",
+  tracking: "計測",
+  "seasonality-external": "外部要因",
+};
+
+const ACTION_TYPE_LABEL: Record<string, string> = {
+  "quick-win": "クイックウィン",
+  strategic: "戦略施策",
+  structural: "構造改革",
+};
 
 function formatDate(iso: string): string {
   try {
@@ -98,13 +120,22 @@ export function generateSlideOutline(opts: {
     }
     for (const h of sortedHyp) {
       push(`▶ ${h.statement}`);
+      if (h.factorCategory) push(`  要因カテゴリ: ${FACTOR_LABEL[h.factorCategory] ?? h.factorCategory}`);
+      if (h.mechanism) push(`  因果: ${h.mechanism}`);
       push(`  データ裏付け: ${h.dataSupport}`);
+      if (h.internalFactors && h.internalFactors.length > 0) {
+        push(`  内部要因（自社改善可）: ${h.internalFactors.join(" / ")}`);
+      }
+      if (h.externalFactors && h.externalFactors.length > 0) {
+        push(`  外部要因: ${h.externalFactors.join(" / ")}`);
+      }
+      if (h.nextValidationStep) push(`  次の検証: ${h.nextValidationStep}`);
       push(`  確信度: ${h.confidence}`);
     }
     push("");
 
-    // Slide 6–N: Actions
-    const sortedActions = sortByPriority(actions);
+    // Slide 6–N: Actions (ICE スコア降順)
+    const sortedActions = sortByIceThenPriority(actions);
     let slideNum = 6;
     if (sortedActions.length === 0) {
       push(divider);
@@ -118,12 +149,25 @@ export function generateSlideOutline(opts: {
         push(divider);
         push(`スライド ${slideNum}: 推奨アクション — ${a.title}`);
         push(divider);
-        push(`★ [${a.priority.toUpperCase()}] ${a.title}`);
+        const typeTag = a.type ? `[${ACTION_TYPE_LABEL[a.type] ?? a.type}] ` : "";
+        push(`★ ${typeTag}[${a.priority.toUpperCase()}] ${a.title}`);
+        if (a.ice) {
+          push(`  ICE: ${a.ice.score.toFixed(1)}（I ${a.ice.impact} / C ${a.ice.confidence} / E ${a.ice.ease}）`);
+        }
+        if (a.targetKpi) {
+          push(
+            `  目標 KPI: ${a.targetKpi.metric} を ${a.targetKpi.direction === "up" ? "↑" : "↓"} ${a.targetKpi.targetDelta}（${a.targetKpi.timelineWeeks} 週）`,
+          );
+        }
+        if (a.leadIndicator) push(`  先行指標: ${a.leadIndicator}`);
         push(`  工数: ${a.effort}`);
         push(`  期待効果: ${a.expectedImpact}`);
         if (a.steps.length > 0) {
           push("  実施ステップ:");
           a.steps.forEach((s, idx) => push(`    ${idx + 1}. ${s}`));
+        }
+        if (a.risks && a.risks.length > 0) {
+          push(`  リスク: ${a.risks.join(" / ")}`);
         }
         push("");
         slideNum++;
