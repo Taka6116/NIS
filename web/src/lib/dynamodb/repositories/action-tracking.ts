@@ -1,5 +1,5 @@
 import { PutCommand, QueryCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
-import { getDynamoClient, isMockDatabase } from "@/lib/dynamodb/client";
+import { getDynamoClient, isMockDatabase, isTableNotFoundError } from "@/lib/dynamodb/client";
 import { mockStore } from "@/lib/dynamodb/mock-store";
 import { tableNames } from "@/lib/dynamodb/tables";
 import type { ActionTrackingRecord, InsightActionStatus } from "@/types/nis";
@@ -17,9 +17,18 @@ export async function upsertActionTracking(row: ActionTrackingRecord): Promise<v
     mockStore.actionTracking.set(key(row.projectId, row.sk), row);
     return;
   }
-  await getDynamoClient().send(
-    new PutCommand({ TableName: tableNames.actionTracking, Item: row }),
-  );
+  try {
+    await getDynamoClient().send(
+      new PutCommand({ TableName: tableNames.actionTracking, Item: row }),
+    );
+  } catch (e) {
+    if (isTableNotFoundError(e)) {
+      throw new Error(
+        `DynamoDB テーブル '${tableNames.actionTracking}' が存在しません。AWS コンソールでこのテーブルを作成してください（PK: projectId, SK: sk）。`,
+      );
+    }
+    throw e;
+  }
 }
 
 export async function listActionTracking(projectId: string, limit = 500): Promise<ActionTrackingRecord[]> {
@@ -29,15 +38,25 @@ export async function listActionTracking(projectId: string, limit = 500): Promis
       .sort((a, b) => b.updatedAtIso.localeCompare(a.updatedAtIso))
       .slice(0, limit);
   }
-  const out = await getDynamoClient().send(
-    new QueryCommand({
-      TableName: tableNames.actionTracking,
-      KeyConditionExpression: "projectId = :p",
-      ExpressionAttributeValues: { ":p": projectId },
-      Limit: limit,
-    }),
-  );
-  return (out.Items ?? []) as ActionTrackingRecord[];
+  try {
+    const out = await getDynamoClient().send(
+      new QueryCommand({
+        TableName: tableNames.actionTracking,
+        KeyConditionExpression: "projectId = :p",
+        ExpressionAttributeValues: { ":p": projectId },
+        Limit: limit,
+      }),
+    );
+    return (out.Items ?? []) as ActionTrackingRecord[];
+  } catch (e) {
+    if (isTableNotFoundError(e)) {
+      console.warn(
+        `[action-tracking] table '${tableNames.actionTracking}' not found; returning empty list`,
+      );
+      return [];
+    }
+    throw e;
+  }
 }
 
 export async function deleteActionTracking(projectId: string, sk: string): Promise<void> {
@@ -45,9 +64,14 @@ export async function deleteActionTracking(projectId: string, sk: string): Promi
     mockStore.actionTracking.delete(key(projectId, sk));
     return;
   }
-  await getDynamoClient().send(
-    new DeleteCommand({ TableName: tableNames.actionTracking, Key: { projectId, sk } }),
-  );
+  try {
+    await getDynamoClient().send(
+      new DeleteCommand({ TableName: tableNames.actionTracking, Key: { projectId, sk } }),
+    );
+  } catch (e) {
+    if (isTableNotFoundError(e)) return;
+    throw e;
+  }
 }
 
 export function buildTrackingRecord(input: {

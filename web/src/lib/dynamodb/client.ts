@@ -32,3 +32,16 @@ export function getDynamoClient(): DynamoDBDocumentClient {
 
 /** @deprecated Use getDynamoClient() — kept for backward compatibility */
 export const dynamoClient = isMockDatabase() ? (null as unknown as DynamoDBDocumentClient) : makeClient();
+
+/**
+ * DynamoDB の ResourceNotFoundException（テーブル未作成）を検出するための型ガード。
+ * 新規機能で追加したテーブルが本番にまだ存在しないケースを、
+ * 「空の状態」として扱うための判定に使います。
+ */
+export function isTableNotFoundError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const anyErr = err as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } };
+  if (anyErr.name === "ResourceNotFoundException") return true;
+  if (anyErr.message && anyErr.message.includes("ResourceNotFoundException")) return true;
+  return false;
+}

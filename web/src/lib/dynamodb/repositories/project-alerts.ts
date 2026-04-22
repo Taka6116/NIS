@@ -1,5 +1,5 @@
 import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
-import { getDynamoClient, isMockDatabase } from "@/lib/dynamodb/client";
+import { getDynamoClient, isMockDatabase, isTableNotFoundError } from "@/lib/dynamodb/client";
 import { mockStore } from "@/lib/dynamodb/mock-store";
 import { tableNames } from "@/lib/dynamodb/tables";
 import type { ProjectAlertConfig } from "@/types/nis";
@@ -8,13 +8,23 @@ export async function getProjectAlertConfig(projectId: string): Promise<ProjectA
   if (isMockDatabase()) {
     return mockStore.projectAlerts.get(projectId) ?? null;
   }
-  const out = await getDynamoClient().send(
-    new GetCommand({
-      TableName: tableNames.projectAlerts,
-      Key: { projectId, sk: "config" },
-    }),
-  );
-  return (out.Item as ProjectAlertConfig | undefined) ?? null;
+  try {
+    const out = await getDynamoClient().send(
+      new GetCommand({
+        TableName: tableNames.projectAlerts,
+        Key: { projectId, sk: "config" },
+      }),
+    );
+    return (out.Item as ProjectAlertConfig | undefined) ?? null;
+  } catch (e) {
+    if (isTableNotFoundError(e)) {
+      console.warn(
+        `[project-alerts] table '${tableNames.projectAlerts}' not found; returning null`,
+      );
+      return null;
+    }
+    throw e;
+  }
 }
 
 export async function putProjectAlertConfig(row: ProjectAlertConfig): Promise<void> {
@@ -22,9 +32,18 @@ export async function putProjectAlertConfig(row: ProjectAlertConfig): Promise<vo
     mockStore.projectAlerts.set(row.projectId, row);
     return;
   }
-  await getDynamoClient().send(
-    new PutCommand({ TableName: tableNames.projectAlerts, Item: row }),
-  );
+  try {
+    await getDynamoClient().send(
+      new PutCommand({ TableName: tableNames.projectAlerts, Item: row }),
+    );
+  } catch (e) {
+    if (isTableNotFoundError(e)) {
+      throw new Error(
+        `DynamoDB テーブル '${tableNames.projectAlerts}' が存在しません。AWS コンソールでこのテーブルを作成してください（PK: projectId, SK: sk）。`,
+      );
+    }
+    throw e;
+  }
 }
 
 export function defaultAlertConfig(projectId: string): ProjectAlertConfig {

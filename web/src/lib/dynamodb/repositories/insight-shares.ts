@@ -1,5 +1,5 @@
 import { DeleteCommand, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
-import { getDynamoClient, isMockDatabase } from "@/lib/dynamodb/client";
+import { getDynamoClient, isMockDatabase, isTableNotFoundError } from "@/lib/dynamodb/client";
 import { mockStore } from "@/lib/dynamodb/mock-store";
 import { tableNames } from "@/lib/dynamodb/tables";
 
@@ -18,19 +18,33 @@ export async function putShare(row: InsightShareRecord): Promise<void> {
     mockStore.insightShares.set(row.token, row);
     return;
   }
-  await getDynamoClient().send(
-    new PutCommand({ TableName: tableNames.insightShares, Item: row }),
-  );
+  try {
+    await getDynamoClient().send(
+      new PutCommand({ TableName: tableNames.insightShares, Item: row }),
+    );
+  } catch (e) {
+    if (isTableNotFoundError(e)) {
+      throw new Error(
+        `DynamoDB テーブル '${tableNames.insightShares}' が存在しません。AWS コンソールでこのテーブルを作成してください（PK: token）。`,
+      );
+    }
+    throw e;
+  }
 }
 
 export async function getShare(token: string): Promise<InsightShareRecord | null> {
   if (isMockDatabase()) {
     return mockStore.insightShares.get(token) ?? null;
   }
-  const out = await getDynamoClient().send(
-    new GetCommand({ TableName: tableNames.insightShares, Key: { token } }),
-  );
-  return (out.Item as InsightShareRecord | undefined) ?? null;
+  try {
+    const out = await getDynamoClient().send(
+      new GetCommand({ TableName: tableNames.insightShares, Key: { token } }),
+    );
+    return (out.Item as InsightShareRecord | undefined) ?? null;
+  } catch (e) {
+    if (isTableNotFoundError(e)) return null;
+    throw e;
+  }
 }
 
 export async function deleteShare(token: string): Promise<void> {
@@ -38,9 +52,14 @@ export async function deleteShare(token: string): Promise<void> {
     mockStore.insightShares.delete(token);
     return;
   }
-  await getDynamoClient().send(
-    new DeleteCommand({ TableName: tableNames.insightShares, Key: { token } }),
-  );
+  try {
+    await getDynamoClient().send(
+      new DeleteCommand({ TableName: tableNames.insightShares, Key: { token } }),
+    );
+  } catch (e) {
+    if (isTableNotFoundError(e)) return;
+    throw e;
+  }
 }
 
 /** token 生成（crypto.randomUUID を使う） */
