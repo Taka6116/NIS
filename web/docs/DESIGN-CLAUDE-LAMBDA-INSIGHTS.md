@@ -23,7 +23,9 @@ Next.js（Vercel）から **Amazon Bedrock** を直接呼び出し、Gemini と 
 ### 環境変数（Web / Vercel）
 
 - `BEDROCK_MODEL_ID` — 使用する Claude モデル ID または推論プロファイル ID。
-  例（東京・クロスリージョン推論）: `apac.anthropic.claude-sonnet-4-5-20250929-v1:0`
+  - 東京（`ap-northeast-1`）で Claude Sonnet 4.5 を使う場合: **`jp.anthropic.claude-sonnet-4-5-20250929-v1:0`**
+  - Global 推論プロファイル: `global.anthropic.claude-sonnet-4-5-20250929-v1:0`
+  - `apac.*` プレフィックスは存在しないので注意。
 - `AWS_REGION`（例: `ap-northeast-1`）
 - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` — `bedrock:InvokeModel` 権限を持つ IAM ユーザーのアクセスキー。
 
@@ -49,7 +51,7 @@ Web 実行 IAM ユーザー（例: `nis-vercel`）に以下を付与。
 
 ### Bedrock モデルアクセス
 
-AWS コンソール → Bedrock → **Model access** で使用する Claude モデル（Sonnet 等、現行モデル）へのアクセスを有効化しておく。`Legacy` 表記のモデルは過去 30 日使用実績がないと `AccessDeniedException` を返すので、現行モデルを選ぶ。
+AWS Bedrock の「Model access」ページは廃止済みで、商用リージョンのサーバーレス FM は初回呼び出し時に自動的に有効化される（Anthropic モデルは初回だけユースケース申請が必要な場合あり）。`Legacy` 表記のモデルは過去 30 日使用実績がないと `AccessDeniedException` を返すので、現行モデル（Sonnet 4.5 など）を選ぶ。
 
 ## 制約・注意
 

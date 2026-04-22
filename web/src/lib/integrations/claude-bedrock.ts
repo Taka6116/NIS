@@ -108,7 +108,8 @@ export async function invokeInsightClaudeBedrock(
   const modelId = process.env.BEDROCK_MODEL_ID;
   if (!modelId?.trim()) {
     throw new Error(
-      "BEDROCK_MODEL_ID is not set. Set it to an active Claude model or inference profile ID (e.g. apac.anthropic.claude-sonnet-4-5-20250929-v1:0).",
+      "BEDROCK_MODEL_ID is not set. Set it to an active Claude model or inference profile ID " +
+        "(e.g. jp.anthropic.claude-sonnet-4-5-20250929-v1:0 for Tokyo, or global.anthropic.claude-sonnet-4-5-20250929-v1:0).",
     );
   }
   const region = process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "ap-northeast-1";
