@@ -1,4 +1,4 @@
-import { invokeInsightClaudeLambda } from "@/lib/integrations/claude-lambda";
+import { invokeInsightClaudeBedrock } from "@/lib/integrations/claude-bedrock";
 import { generateInsightPipeline } from "@/lib/integrations/gemini";
 import { putInsight } from "@/lib/dynamodb/repositories/insights";
 import { getProject } from "@/lib/dynamodb/repositories/projects";
@@ -44,10 +44,7 @@ export async function runInsightGeneration(
   const sk = `${generatedAtIso}#weekly`;
 
   if (provider === "claude") {
-    const out = await invokeInsightClaudeLambda({
-      version: 1,
-      ...commonInput,
-    });
+    const out = await invokeInsightClaudeBedrock(commonInput);
 
     const findings = deriveFindingsFromPipeline(out.pipeline);
 
