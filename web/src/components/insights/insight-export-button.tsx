@@ -15,17 +15,13 @@ type TabKey = "outline" | "marp" | "claude";
 export function InsightExportButton({ outlineText, marpMarkdown, claudeVisualPrompt }: ExportPayload) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState<TabKey | null>(null);
-  const [tab, setTab] = useState<TabKey>("outline");
+  const [tab, setTab] = useState<TabKey>("marp");
   const [mounted, setMounted] = useState(false);
-  const [slidesBusy, setSlidesBusy] = useState(false);
-  const [slidesError, setSlidesError] = useState<string | null>(null);
-  const [slidesUrl, setSlidesUrl] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // body scroll lock
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -35,7 +31,6 @@ export function InsightExportButton({ outlineText, marpMarkdown, claudeVisualPro
     };
   }, [open]);
 
-  // Esc で閉じる
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -78,31 +73,14 @@ export function InsightExportButton({ outlineText, marpMarkdown, claudeVisualPro
     URL.revokeObjectURL(url);
   }, [marpMarkdown]);
 
-  const handleCreateGoogleSlides = useCallback(async () => {
-    setSlidesBusy(true);
-    setSlidesError(null);
-    setSlidesUrl(null);
-    try {
-      const m = window.location.pathname.match(/\/projects\/([^/]+)\/insights\/([^/]+)/);
-      if (!m) throw new Error("Insight URL を認識できませんでした");
-      const [, projectId, insightId] = m;
-      const res = await fetch(`/api/projects/${projectId}/insights/${insightId}/slides`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error || `HTTP ${res.status}`);
-      }
-      const j = await res.json();
-      setSlidesUrl(j.url as string);
-    } catch (e) {
-      setSlidesError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSlidesBusy(false);
-    }
-  }, []);
+  const tabHint: Record<TabKey, string> = {
+    outline:
+      "シンプルなテキスト版。そのままコピペして議事メモやメールに貼る用途に。",
+    marp:
+      ".md をダウンロードし、ローカルで `npx @marp-team/marp-cli slides.md -o slides.pptx` を実行すると PPTX/PDF が生成できます。そのまま PowerPoint / Google Slides へアップロード可能。",
+    claude:
+      "そのままご自身の Claude に投げると、ビジュアル付きのスライド案を作ってくれます。",
+  };
 
   const modal = open ? (
     <div
@@ -131,16 +109,6 @@ export function InsightExportButton({ outlineText, marpMarkdown, claudeVisualPro
                 .md ダウンロード
               </Button>
             ) : null}
-            {tab === "outline" ? (
-              <Button
-                variant="outline"
-                className="h-8 rounded-lg border-yellow-300/40 px-3 text-xs text-yellow-100 hover:bg-yellow-500/15 disabled:opacity-60"
-                onClick={handleCreateGoogleSlides}
-                disabled={slidesBusy}
-              >
-                {slidesBusy ? "Slides 生成中…" : "Google Slides を作成"}
-              </Button>
-            ) : null}
             <button
               type="button"
               onClick={() => setOpen(false)}
@@ -154,8 +122,8 @@ export function InsightExportButton({ outlineText, marpMarkdown, claudeVisualPro
 
         <div className="flex items-center gap-2 border-b border-white/5 px-6 py-2">
           {([
+            { k: "marp", label: "Marp Markdown（推奨）" },
             { k: "outline", label: "スライド骨子（テキスト）" },
-            { k: "marp", label: "Marp Markdown" },
             { k: "claude", label: "Claude 用ビジュアル生成プロンプト" },
           ] as { k: TabKey; label: string }[]).map(({ k, label }) => (
             <button
@@ -179,22 +147,8 @@ export function InsightExportButton({ outlineText, marpMarkdown, claudeVisualPro
             {activeText}
           </pre>
         </div>
-        <div className="space-y-2 border-t border-white/10 px-6 py-3">
-          {slidesError ? (
-            <p className="text-[11px] text-rose-300">Google Slides 作成エラー: {slidesError}</p>
-          ) : null}
-          {slidesUrl ? (
-            <p className="text-[11px] text-emerald-300">
-              作成しました:{" "}
-              <a className="underline" href={slidesUrl} target="_blank" rel="noreferrer">
-                {slidesUrl}
-              </a>
-            </p>
-          ) : null}
-          <p className="text-[10px] text-slate-500">
-            「スライド骨子」はテキスト版、「Marp Markdown」は Marp CLI で PPTX/PDF
-            に変換可能、「Claude 用ビジュアル生成プロンプト」は別途 Claude に投げてビジュアル付きスライドを生成させる用途です。
-          </p>
+        <div className="space-y-1 border-t border-white/10 px-6 py-3">
+          <p className="text-[10px] text-slate-400">{tabHint[tab]}</p>
         </div>
       </div>
     </div>
