@@ -5,6 +5,8 @@ import type {
   InsightIssue,
   InsightRecord,
   InsightSegment,
+  KwSummary,
+  ScoredKeyword,
 } from "@/types/nis";
 
 /** Gemini / Claude 共通の 4 段階システムプロンプト（設計書どおり） */
@@ -67,7 +69,8 @@ ${STAGE3_COMMON_RULES}
 
 const STAGE3_COMMON_RULES = `【出力規則】
 - 3〜5 件。あなたの専門領域から優先度の高いものを選ぶ。
-- "factorCategory" は次のいずれかから必ず選ぶ: crawl-index / technical / on-page / content-quality / authority / ux-clarity / tracking / seasonality-external。
+- "factorCategory" は次のいずれかから必ず選ぶ: crawl-index / technical / on-page / content-quality / authority / ux-clarity / tracking / seasonality-external / content-gap。
+  - "content-gap": 対象 KW に対するコンテンツが不足している、または存在しない場合に使う。
 - "internalFactors" と "externalFactors" を必ず分離（自社改善可 / 不可）。
 - "mechanism" に因果チェーンを明示する（例: "CTR -2.85pt → クリック -98.4% → セッション -71.6%"）。
 - "nextValidationStep" には 1 時間〜1 日以内にできる低コスト検証手段を書く。
@@ -77,6 +80,10 @@ const STAGE3_COMMON_RULES = `【出力規則】
   - "multi-signal-inferred": 2 種類以上の指標を組み合わせて推測
   - "speculative": データは弱いが業界知見から推測（明示推奨）
 - "evidenceRefs" に、この仮説の根拠となる fact.id を 1〜5 件列挙する（ハルシネーション抑止のため必須）。存在しない fact.id は絶対に書かない。
+- 入力に「KW データ」セクションがある場合:
+  - 各 KW の volume（月間検索数）・KD（競合難度）・trend（トレンド）を根拠として仮説を強化すること。
+  - volume が高くて KD が低い KW（狙い目）や、trend="up" の上昇 KW は「content-gap」仮説の直接的な根拠になる。
+  - KW データを使った仮説は factorCategory に "content-gap" を設定し、mechanism に "対象 KW が未カバー → 検索流入機会の損失" の因果チェーンを書く。
 次の JSON のみ:
 {
   "hypotheses": [
@@ -134,6 +141,10 @@ export const STAGE4_SYSTEM = `あなたはグロース施策プランナーで�
   - "fifteenMinute": 15 分版（800 字以内、課題→仮説→打ち手の順）
   - "thirtyMinute": 30 分版（1500 字以内、各施策の ROI を含む）
 - "topPriority" は ICE score が最も高い施策を選び、理由を 2 文程度でまとめる。
+- 入力に「KW データ」セクションがある場合は、各 action に "contentPlan" を付与すること:
+  - "recommendedActions": 優先度の高い KW を最大 5 件選び、コンテンツ種別（article / lp / existing-page-update）・理由・月間獲得見込み数・記事/LP 骨子（H1・主要見出し 3 本・CTA の 1〜2 文）を出力。
+  - "doNotTargetKws": KD が高い、または検索意図がサイトのビジネスとミスマッチな KW を最大 3 件挙げて理由を書く。
+  - KW データがない場合は contentPlan フィールドは省略してよい。
 次の JSON のみ:
 {
   "summary": "全体要約（クライアント向け、平易な日本語。期間と比較期間を日付で明示）",
@@ -163,6 +174,21 @@ export const STAGE4_SYSTEM = `あなたはグロース施策プランナーで�
           { "horizonWeeks": 4, "sessionsDelta": -100, "confidence": "medium" },
           { "horizonWeeks": 8, "sessionsDelta": -400, "confidence": "medium" },
           { "horizonWeeks": 12, "sessionsDelta": -900, "confidence": "low" }
+        ]
+      },
+      "contentPlan": {
+        "recommendedActions": [
+          {
+            "kwTarget": "株式譲渡 税金",
+            "type": "article",
+            "reason": "KD=1・月間 1500 vol・informational 意図。既存コンテンツなく獲得余地大",
+            "estimatedVolumeCapturable": 300,
+            "priority": "high",
+            "outline": "H1: 株式譲渡にかかる税金の完全ガイド / H2: 譲渡益税の計算方法 / H2: 確定申告の手順 / H2: 節税対策 / CTA: 無料相談フォームへ誘導"
+          }
+        ],
+        "doNotTargetKws": [
+          { "kw": "m&a 仲介", "reason": "KD=16・大手競合が上位を独占・現ドメイン強度では上位表示が困難" }
         ]
       }
     }
@@ -208,6 +234,58 @@ function formatRangeNoteDays(start: string, end: string): string {
   }
 }
 
+/**
+ * KwSummary をプロンプト用テキストブロックに変換する。
+ * トークン消費を抑えるため、svTrend 配列は含めず主要フィールドのみ。
+ */
+export function buildKwBlock(summary: KwSummary): string {
+  if (summary.totalKeywords === 0) return "";
+
+  const catLine = Object.entries(summary.categoryCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([c, n]) => `${c}(${n})`)
+    .join(" ");
+
+  const kwRow = (k: ScoredKeyword) =>
+    `| ${k.keyword.padEnd(20)} | ${String(k.volume).padStart(6)} | ${String(k.kd).padStart(3)} | ¥${String(Math.round(k.cpc)).padStart(3)} | ${String(k.opportunityScore).padStart(5)} | ${k.trend === "up" ? `up +${k.trendChangePercent}%` : k.trend === "down" ? `down ${k.trendChangePercent}%` : "stable"} | ${k.category} |`;
+
+  const topTable =
+    summary.topKws.length > 0
+      ? [
+          "| keyword                 |    vol |  KD | CPC | score | trend        | category |",
+          "|-------------------------|--------|-----|-----|-------|--------------|----------|",
+          ...summary.topKws.map(kwRow),
+        ].join("\n")
+      : "(なし)";
+
+  const risingTable =
+    summary.risingKws.length > 0
+      ? [
+          "| keyword                 |    vol |  KD | trend        |",
+          "|-------------------------|--------|-----|--------------|",
+          ...summary.risingKws.map(
+            (k) =>
+              `| ${k.keyword.padEnd(24)} | ${String(k.volume).padStart(6)} | ${String(k.kd).padStart(3)} | up +${k.trendChangePercent}% |`,
+          ),
+        ].join("\n")
+      : "(なし)";
+
+  return [
+    "=== KW データ（Ahrefs インポート済み） ===",
+    `総 KW 数: ${summary.totalKeywords} 件 | ファイル: ${summary.datasetNames.join(", ")}`,
+    `カテゴリ構成: ${catLine}`,
+    "",
+    "--- 狙い目 KW Top 20（opportunity スコア降順） ---",
+    topTable,
+    "",
+    "--- トレンド上昇 KW Top 10 ---",
+    risingTable,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function buildMetricsBlock(input: {
   projectName: string;
   domain: string;
@@ -224,6 +302,8 @@ export function buildMetricsBlock(input: {
   comparison?: "previous" | "yoy";
   segment?: InsightSegment;
   historicalInsights?: InsightRecord[];
+  /** KW 分析データ（Ahrefs CSV インポート済みの場合に注入）。存在する場合は末尾にブロックを追加。 */
+  kwSummary?: KwSummary;
 }): string {
   const compLabel = input.comparison === "yoy" ? "前年同期" : "直前期間";
   const periodLines: string[] = [];
@@ -278,6 +358,7 @@ export function buildMetricsBlock(input: {
           })
           .join("\n")}`
       : "",
+    input.kwSummary ? buildKwBlock(input.kwSummary) : "",
   ]
     .filter(Boolean)
     .join("\n");

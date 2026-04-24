@@ -1,4 +1,4 @@
-import type { AhrefsKeywordRow, PriorityLevel, ScoredKeyword } from "@/types/nis";
+import type { AhrefsDataset, AhrefsKeywordRow, KwSummary, PriorityLevel, ScoredKeyword } from "@/types/nis";
 
 const CATEGORIES: { category: string; patterns: string[] }[] = [
   { category: "ブランド", patterns: ["nihon-teikei", "日本提携", "nihon teikei"] },
@@ -89,4 +89,28 @@ export function getCategoryCounts(scored: ScoredKeyword[]): Record<string, numbe
 export function mergeAndAnalyze(datasets: { keywords: AhrefsKeywordRow[] }[]): ScoredKeyword[] {
   const all = datasets.flatMap((d) => d.keywords);
   return analyzeKeywords(all);
+}
+
+/**
+ * インサイトパイプライン向けに KW データセットを集約したサマリを返す。
+ * - topKws: opportunity スコア上位 20 件（priority 3→2 の順）
+ * - risingKws: トレンド上昇 KW 上位 10 件
+ * - カテゴリ別件数、総 KW 数、ファイル名一覧
+ */
+export function buildKwSummary(datasets: AhrefsDataset[]): KwSummary {
+  const all = mergeAndAnalyze(datasets);
+  const topKws = all
+    .filter((k) => k.priority >= 2)
+    .slice(0, 20);
+  const risingKws = all
+    .filter((k) => k.trend === "up")
+    .sort((a, b) => b.trendChangePercent - a.trendChangePercent)
+    .slice(0, 10);
+  return {
+    topKws,
+    risingKws,
+    categoryCounts: getCategoryCounts(all),
+    totalKeywords: all.length,
+    datasetNames: datasets.map((d) => d.fileName),
+  };
 }

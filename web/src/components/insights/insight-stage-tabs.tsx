@@ -21,6 +21,13 @@ const FACTOR_LABEL: Record<string, string> = {
   "ux-clarity": "UX(Clarity)",
   tracking: "計測",
   "seasonality-external": "外部要因",
+  "content-gap": "コンテンツ不足",
+};
+
+const CONTENT_TYPE_LABEL: Record<string, string> = {
+  article: "記事",
+  lp: "LP",
+  "existing-page-update": "既存ページ更新",
 };
 
 const ACTION_TYPE_LABEL: Record<string, string> = {
@@ -219,6 +226,61 @@ export function InsightStageTabs({ pipeline }: { pipeline: InsightPipeline }) {
                 <div className="mt-3 rounded-md border border-amber-400/20 bg-amber-500/5 p-2 text-xs text-amber-200/90">
                   <span className="font-semibold">リスク: </span>
                   {a.risks.join(" / ")}
+                </div>
+              ) : null}
+
+              {a.contentPlan && a.contentPlan.recommendedActions.length > 0 ? (
+                <div className="mt-4 space-y-2 rounded-lg border border-emerald-400/20 bg-emerald-500/5 p-3">
+                  <p className="text-xs font-semibold text-emerald-300">
+                    📝 コンテンツ計画（KW 優先順位）
+                  </p>
+                  <div className="space-y-3">
+                    {a.contentPlan.recommendedActions.map((rec, i) => (
+                      <div key={`${rec.kwTarget}-${i}`} className="rounded-md border border-white/10 bg-white/5 p-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-200">
+                            {CONTENT_TYPE_LABEL[rec.type] ?? rec.type}
+                          </span>
+                          <span
+                            className={`rounded px-2 py-0.5 text-[10px] font-semibold ${
+                              rec.priority === "high"
+                                ? "bg-rose-500/20 text-rose-200"
+                                : rec.priority === "medium"
+                                  ? "bg-amber-500/20 text-amber-200"
+                                  : "bg-slate-500/20 text-slate-300"
+                            }`}
+                          >
+                            {rec.priority}
+                          </span>
+                          <span className="text-xs font-semibold text-white">{rec.kwTarget}</span>
+                          {rec.estimatedVolumeCapturable ? (
+                            <span className="text-xs text-slate-400">
+                              獲得見込み {rec.estimatedVolumeCapturable.toLocaleString()} 訪問/月
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-1.5 text-xs text-slate-300">{rec.reason}</p>
+                        {rec.outline ? (
+                          <p className="mt-1.5 text-xs text-slate-400">
+                            <span className="font-medium text-slate-500">骨子: </span>
+                            {rec.outline}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                  {a.contentPlan.doNotTargetKws && a.contentPlan.doNotTargetKws.length > 0 ? (
+                    <div className="mt-2 rounded-md border border-white/5 bg-white/5 p-2">
+                      <p className="text-[10px] font-semibold text-slate-500">対象外 KW</p>
+                      <div className="mt-1 space-y-1">
+                        {a.contentPlan.doNotTargetKws.map((x) => (
+                          <p key={x.kw} className="text-xs text-slate-500">
+                            <span className="font-medium line-through">{x.kw}</span> — {x.reason}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </Card>

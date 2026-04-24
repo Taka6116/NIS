@@ -23,6 +23,7 @@ import {
   STAGE3_MERGER_SYSTEM,
   STAGE4_SYSTEM,
   STAGE4_5_SYSTEM,
+  buildKwBlock,
   buildMetricsBlock,
   buildStage3SystemForPersona,
   buildStage3UserContent,
@@ -37,6 +38,7 @@ import type {
   InsightRecord,
   InsightSegment,
   InsightTalkingPoints,
+  KwSummary,
 } from "@/types/nis";
 import type { KpiSnapshot } from "@/lib/metrics/aggregate";
 
@@ -63,6 +65,7 @@ export type GeminiInput = {
   historicalInsights?: InsightRecord[];
   multiPersona?: boolean;
   selfCritique?: boolean;
+  kwSummary?: KwSummary;
 };
 
 export type GeminiPipelineResult = {
@@ -264,6 +267,7 @@ export async function generateStage34(input: GeminiStage34Input): Promise<Gemini
     );
   }
 
+  const kwBlock = input.kwSummary ? buildKwBlock(input.kwSummary) : "";
   const user4 = [
     "=== Stage1 facts ===",
     JSON.stringify({ facts: input.facts }, null, 2),
@@ -273,7 +277,10 @@ export async function generateStage34(input: GeminiStage34Input): Promise<Gemini
     "",
     "=== Stage3 hypotheses ===",
     JSON.stringify({ hypotheses }, null, 2),
-  ].join("\n");
+    kwBlock ? `\n${kwBlock}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
   const s4 = await generateStageJson(baseModel(STAGE4_SYSTEM), user4, isStage4);
   raws.push(`stage 4: ${s4.raw}`);
   tokens.push(s4.tokens);

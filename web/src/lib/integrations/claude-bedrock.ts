@@ -23,6 +23,7 @@ import {
   STAGE3_MERGER_SYSTEM,
   STAGE4_SYSTEM,
   STAGE4_5_SYSTEM,
+  buildKwBlock,
   buildMetricsBlock,
   buildStage3SystemForPersona,
   buildStage3UserContent,
@@ -38,6 +39,7 @@ import type {
   InsightRecord,
   InsightSegment,
   InsightTalkingPoints,
+  KwSummary,
 } from "@/types/nis";
 
 export type ClaudeBedrockInput = {
@@ -60,6 +62,8 @@ export type ClaudeBedrockInput = {
   multiPersona?: boolean;
   /** A3: Self-critique Stage4.5 を有効化するか（デフォルト true） */
   selfCritique?: boolean;
+  /** KW 連携: Ahrefs CSV から集約した KW サマリ。存在する場合は Stage1〜4 のプロンプトに注入される。 */
+  kwSummary?: KwSummary;
 };
 
 export type ClaudeBedrockResult = {
@@ -296,6 +300,7 @@ export async function invokeInsightClaudeStage34(input: ClaudeStage34Input): Pro
     hypotheses = s3.data.hypotheses.map((h) => normalizeHypothesis({ ...h, persona: h.persona ?? "merged" }, knownFactIds));
   }
 
+  const kwBlock = input.kwSummary ? buildKwBlock(input.kwSummary) : "";
   const user4 = [
     "=== Stage1 facts ===",
     JSON.stringify({ facts: input.facts }, null, 2),
@@ -305,8 +310,13 @@ export async function invokeInsightClaudeStage34(input: ClaudeStage34Input): Pro
     "",
     "=== Stage3 hypotheses ===",
     JSON.stringify({ hypotheses }, null, 2),
-  ].join("\n");
-  const s4 = await invokeStage(client, modelId, STAGE4_SYSTEM, user4, isStage4, "stage4");
+    kwBlock ? `\n${kwBlock}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const s4 = await invokeStage(client, modelId, STAGE4_SYSTEM, user4, isStage4, "stage4", {
+    maxTokens: 12000,
+  });
   raws.push({ stage: "stage 4", raw: s4.raw });
   tokens.push(s4.tokens);
 

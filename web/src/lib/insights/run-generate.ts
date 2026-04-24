@@ -13,6 +13,8 @@ import {
   listInsights,
 } from "@/lib/dynamodb/repositories/insights";
 import { getProject } from "@/lib/dynamodb/repositories/projects";
+import { listKwDatasets } from "@/lib/dynamodb/repositories/kw-datasets";
+import { buildKwSummary } from "@/lib/ahrefs/analyzer";
 import { runRules } from "@/lib/insights/rules";
 import { deriveFindingsFromPipeline } from "@/lib/insights/pipeline";
 import { getMetricsBundleForWindow } from "@/lib/metrics/aggregate";
@@ -34,6 +36,7 @@ import type {
   InsightIssue,
   InsightRecord,
   InsightSegment,
+  KwSummary,
 } from "@/types/nis";
 
 export type InsightProvider = "gemini" | "claude";
@@ -108,6 +111,22 @@ async function buildCommonInput(
     }
   }
 
+  // KW データを S3 からロードしてサマリを生成（失敗時は undefined でフォールバック）
+  let kwSummary: KwSummary | undefined;
+  try {
+    const datasets = await listKwDatasets(projectId);
+    if (datasets.length > 0) {
+      // 最大 3 ファイル・1 ファイルあたり最大 200 件に絞ってトークン消費を抑制
+      const capped = datasets.slice(0, 3).map((d) => ({
+        ...d,
+        keywords: d.keywords.slice(0, 200),
+      }));
+      kwSummary = buildKwSummary(capped);
+    }
+  } catch {
+    kwSummary = undefined;
+  }
+
   const commonInput = {
     projectName: project.projectName,
     domain: project.domain,
@@ -124,6 +143,7 @@ async function buildCommonInput(
     comparison: window.comparison,
     segment: opts?.segment,
     historicalInsights,
+    kwSummary,
   };
 
   return { project, bundle, alerts, clarityNote, periodLabel, commonInput };

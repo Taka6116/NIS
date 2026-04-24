@@ -259,6 +259,18 @@ export type InsightActionItem = {
   projectedImpact?: InsightProjectedImpact;
   /** A3 Stage4.5: 懐疑視点の批評 */
   critiques?: InsightCritique[];
+  /** KW 連携: この打ち手に紐づくコンテンツ計画（記事/LP 優先リスト）。KW CSV がインポートされている場合のみ出力される。 */
+  contentPlan?: {
+    recommendedActions: Array<{
+      kwTarget: string;
+      type: "article" | "lp" | "existing-page-update";
+      reason: string;
+      estimatedVolumeCapturable?: number;
+      priority: "high" | "medium" | "low";
+      outline?: string;
+    }>;
+    doNotTargetKws?: Array<{ kw: string; reason: string }>;
+  };
 };
 
 /** A6: Not-to-do リスト */
@@ -453,4 +465,37 @@ export type AhrefsDataset = {
   rowCount: number;
   type: AhrefsDatasetType;
   keywords: AhrefsKeywordRow[];
+};
+
+/* ── KW サマリ（インサイトパイプライン連携用） ── */
+
+export type KwSummary = {
+  topKws: ScoredKeyword[];
+  risingKws: ScoredKeyword[];
+  categoryCounts: Record<string, number>;
+  totalKeywords: number;
+  datasetNames: string[];
+};
+
+/* ── コンテンツ計画（Stage4 出力の contentPlan フィールド） ── */
+
+export type InsightContentPlanItemType = "article" | "lp" | "existing-page-update";
+
+export type InsightContentPlanItem = {
+  kwTarget: string;
+  type: InsightContentPlanItemType;
+  reason: string;
+  estimatedVolumeCapturable?: number;
+  priority: "high" | "medium" | "low";
+  outline?: string;
+};
+
+export type InsightDoNotTargetKw = {
+  kw: string;
+  reason: string;
+};
+
+export type InsightContentPlan = {
+  recommendedActions: InsightContentPlanItem[];
+  doNotTargetKws?: InsightDoNotTargetKw[];
 };

@@ -210,6 +210,57 @@ export function normalizeAction(
     }
   }
 
+  // contentPlan の正規化
+  const rawCp = (a as { contentPlan?: unknown }).contentPlan;
+  let contentPlan: InsightActionItem["contentPlan"];
+  if (rawCp && typeof rawCp === "object") {
+    const cp = rawCp as { recommendedActions?: unknown; doNotTargetKws?: unknown };
+    const recActions = Array.isArray(cp.recommendedActions)
+      ? cp.recommendedActions
+          .filter(
+            (r): r is { kwTarget: string; type: string; reason: string; priority: string; estimatedVolumeCapturable?: number; outline?: string } =>
+              !!r &&
+              typeof r === "object" &&
+              typeof (r as { kwTarget?: unknown }).kwTarget === "string" &&
+              typeof (r as { reason?: unknown }).reason === "string",
+          )
+          .map((r) => ({
+            kwTarget: r.kwTarget,
+            type: (["article", "lp", "existing-page-update"] as const).includes(
+              r.type as "article" | "lp" | "existing-page-update",
+            )
+              ? (r.type as "article" | "lp" | "existing-page-update")
+              : ("article" as const),
+            reason: r.reason,
+            estimatedVolumeCapturable:
+              typeof r.estimatedVolumeCapturable === "number" ? r.estimatedVolumeCapturable : undefined,
+            priority: (["high", "medium", "low"] as const).includes(
+              r.priority as "high" | "medium" | "low",
+            )
+              ? (r.priority as "high" | "medium" | "low")
+              : ("medium" as const),
+            outline: typeof r.outline === "string" ? r.outline : undefined,
+          }))
+      : [];
+    const doNotTargetKws = Array.isArray(cp.doNotTargetKws)
+      ? cp.doNotTargetKws
+          .filter(
+            (x): x is { kw: string; reason: string } =>
+              !!x &&
+              typeof x === "object" &&
+              typeof (x as { kw?: unknown }).kw === "string" &&
+              typeof (x as { reason?: unknown }).reason === "string",
+          )
+          .map((x) => ({ kw: x.kw, reason: x.reason }))
+      : undefined;
+    if (recActions.length > 0) {
+      contentPlan = {
+        recommendedActions: recActions,
+        doNotTargetKws: doNotTargetKws && doNotTargetKws.length > 0 ? doNotTargetKws : undefined,
+      };
+    }
+  }
+
   return {
     ...a,
     type: type && (allowedTypes as string[]).includes(type) ? type : undefined,
@@ -227,6 +278,7 @@ export function normalizeAction(
             typeof (c as InsightCritique).criticism === "string",
         )
       : undefined,
+    contentPlan,
   };
 }
 
