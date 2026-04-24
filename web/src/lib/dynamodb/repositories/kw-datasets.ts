@@ -1,24 +1,25 @@
-import { DeleteCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
-import { getDynamoClient, isMockDatabase, isTableNotFoundError } from "@/lib/dynamodb/client";
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
+import { isMockDatabase } from "@/lib/dynamodb/client";
+import {
+  getKwDatasetBucket,
+  getS3Client,
+  isBucketNotFoundError,
+  isObjectNotFoundError,
+} from "@/lib/s3/client";
 import { mockStore } from "@/lib/dynamodb/mock-store";
-import { tableNames } from "@/lib/dynamodb/tables";
 import type { AhrefsDataset } from "@/types/nis";
 
-export class KwDatasetTableMissingError extends Error {
-  constructor(tableName: string) {
+export class KwDatasetBucketMissingError extends Error {
+  constructor(bucket: string) {
     super(
-      `DynamoDB テーブル '${tableName}' が存在しません。AWS コンソールでこのテーブルを作成してください（PK: projectId(String), SK: sk(String), Billing: PAY_PER_REQUEST）。`,
+      `S3 バケット '${bucket}' が存在しません。AWS コンソールで作成してください（リージョン: ap-northeast-1、ブロックパブリックアクセス: すべて有効）。`,
     );
-    this.name = "KwDatasetTableMissingError";
-  }
-}
-
-export class KwDatasetTooLargeError extends Error {
-  constructor(sizeKB: number) {
-    super(
-      `CSV のデータ量が DynamoDB の 400KB 上限を超過しています（約 ${sizeKB}KB）。より小さい CSV に分割してインポートしてください。`,
-    );
-    this.name = "KwDatasetTooLargeError";
+    this.name = "KwDatasetBucketMissingError";
   }
 }
 
@@ -26,27 +27,48 @@ function mockKey(projectId: string, id: string) {
   return `${projectId}::dataset#${id}`;
 }
 
+function s3Key(projectId: string, id: string): string {
+  return `projects/${projectId}/kw-datasets/${id}.json`;
+}
+
+function s3Prefix(projectId: string): string {
+  return `projects/${projectId}/kw-datasets/`;
+}
+
 export async function putKwDataset(dataset: AhrefsDataset): Promise<void> {
   if (isMockDatabase()) {
     mockStore.kwDatasets.set(mockKey(dataset.projectId, dataset.id), dataset);
     return;
   }
-  const item = { ...dataset, sk: `dataset#${dataset.id}` };
-  const sizeBytes = Buffer.byteLength(JSON.stringify(item), "utf8");
-  if (sizeBytes > 390 * 1024) {
-    throw new KwDatasetTooLargeError(Math.round(sizeBytes / 1024));
-  }
+  const bucket = getKwDatasetBucket();
+  const body = JSON.stringify(dataset);
   try {
-    await getDynamoClient().send(
-      new PutCommand({
-        TableName: tableNames.kwDatasets,
-        Item: item,
+    await getS3Client().send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: s3Key(dataset.projectId, dataset.id),
+        Body: body,
+        ContentType: "application/json; charset=utf-8",
       }),
     );
   } catch (e) {
-    if (isTableNotFoundError(e)) {
-      throw new KwDatasetTableMissingError(tableNames.kwDatasets);
+    if (isBucketNotFoundError(e)) {
+      throw new KwDatasetBucketMissingError(bucket);
     }
+    throw e;
+  }
+}
+
+async function readDatasetObject(bucket: string, key: string): Promise<AhrefsDataset | null> {
+  try {
+    const res = await getS3Client().send(
+      new GetObjectCommand({ Bucket: bucket, Key: key }),
+    );
+    const text = await res.Body?.transformToString("utf-8");
+    if (!text) return null;
+    return JSON.parse(text) as AhrefsDataset;
+  } catch (e) {
+    if (isObjectNotFoundError(e)) return null;
     throw e;
   }
 }
@@ -59,26 +81,40 @@ export async function listKwDatasets(projectId: string): Promise<AhrefsDataset[]
       .map(([, v]) => v)
       .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
   }
+  const bucket = getKwDatasetBucket();
+  const s3 = getS3Client();
+  const prefix = s3Prefix(projectId);
+
+  const keys: string[] = [];
+  let continuationToken: string | undefined;
   try {
-    const res = await getDynamoClient().send(
-      new QueryCommand({
-        TableName: tableNames.kwDatasets,
-        KeyConditionExpression: "projectId = :pk AND begins_with(sk, :prefix)",
-        ExpressionAttributeValues: { ":pk": projectId, ":prefix": "dataset#" },
-      }),
-    );
-    return ((res.Items ?? []) as AhrefsDataset[]).sort((a, b) =>
-      b.uploadedAt.localeCompare(a.uploadedAt),
-    );
-  } catch (e) {
-    if (isTableNotFoundError(e)) {
-      console.warn(
-        `[kw-datasets] table '${tableNames.kwDatasets}' not found; returning empty list`,
+    do {
+      const list = await s3.send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+        }),
       );
+      for (const obj of list.Contents ?? []) {
+        if (obj.Key) keys.push(obj.Key);
+      }
+      continuationToken = list.IsTruncated ? list.NextContinuationToken : undefined;
+    } while (continuationToken);
+  } catch (e) {
+    if (isBucketNotFoundError(e)) {
+      console.warn(`[kw-datasets] bucket '${bucket}' not found; returning empty list`);
       return [];
     }
     throw e;
   }
+
+  const results: AhrefsDataset[] = [];
+  for (const key of keys) {
+    const row = await readDatasetObject(bucket, key);
+    if (row) results.push(row);
+  }
+  return results.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
 }
 
 export async function deleteKwDataset(projectId: string, id: string): Promise<void> {
@@ -86,15 +122,16 @@ export async function deleteKwDataset(projectId: string, id: string): Promise<vo
     mockStore.kwDatasets.delete(mockKey(projectId, id));
     return;
   }
+  const bucket = getKwDatasetBucket();
   try {
-    await getDynamoClient().send(
-      new DeleteCommand({
-        TableName: tableNames.kwDatasets,
-        Key: { projectId, sk: `dataset#${id}` },
+    await getS3Client().send(
+      new DeleteObjectCommand({
+        Bucket: bucket,
+        Key: s3Key(projectId, id),
       }),
     );
   } catch (e) {
-    if (isTableNotFoundError(e)) return;
+    if (isBucketNotFoundError(e)) return;
     throw e;
   }
 }

@@ -5,6 +5,10 @@ export const tableNames = {
   clarityDaily: process.env.NIS_TABLE_CLARITY_DAILY ?? "nis-clarity-daily",
   insights: process.env.NIS_TABLE_INSIGHTS ?? "nis-insights",
   users: process.env.NIS_TABLE_USERS ?? "nis-users",
+  /**
+   * @deprecated KW データセットは S3 に移行しました（NIS_S3_BUCKET_KW_DATASETS）。
+   * この定数は後方互換のためだけに残しています。
+   */
   kwDatasets: process.env.NIS_TABLE_KW_DATASETS ?? "nis-kw-datasets",
   /** B1: 打ち手トラッキング */
   actionTracking: process.env.NIS_TABLE_ACTION_TRACKING ?? "nis-action-tracking",
