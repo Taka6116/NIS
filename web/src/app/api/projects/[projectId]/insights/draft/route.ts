@@ -81,7 +81,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ projectId: str
       provider: draft.modelProvider,
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Unknown error";
-    return Response.json({ error: message, status: "failed" }, { status: 500 });
+    const message = e instanceof Error ? e.message : String(e);
+    const stack = e instanceof Error ? e.stack : undefined;
+    console.error("[draft] error:", message, stack);
+    return Response.json({ error: message, detail: stack?.slice(0, 500), status: "failed" }, { status: 500 });
   }
 }
