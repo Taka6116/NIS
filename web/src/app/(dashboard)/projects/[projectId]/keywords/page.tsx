@@ -83,7 +83,20 @@ export default function KeywordsPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(dataset),
           });
-          if (!res.ok) throw new Error("保存に失敗しました");
+          if (!res.ok) {
+            let serverMsg = "";
+            try {
+              const j = (await res.json()) as { error?: string };
+              serverMsg = j.error ?? "";
+            } catch {
+              /* ignore non-JSON response */
+            }
+            throw new Error(
+              serverMsg
+                ? `保存に失敗しました: ${serverMsg}`
+                : `保存に失敗しました (HTTP ${res.status})`,
+            );
+          }
           setDatasets((prev) => [dataset, ...prev]);
         }
       } catch (e) {

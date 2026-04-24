@@ -31,7 +31,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ projectId: str
     return Response.json({ error: "Invalid dataset" }, { status: 400 });
   }
   const dataset: AhrefsDataset = { ...body, projectId };
-  await putKwDataset(dataset);
+  try {
+    await putKwDataset(dataset);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Unknown error";
+    const name = e instanceof Error ? e.name : "Error";
+    const status = name === "KwDatasetTableMissingError" || name === "KwDatasetTooLargeError" ? 500 : 500;
+    console.error("[api/keywords POST] failed:", e);
+    return Response.json({ error: msg, code: name }, { status });
+  }
   return Response.json({ status: "ok", id: dataset.id });
 }
 
