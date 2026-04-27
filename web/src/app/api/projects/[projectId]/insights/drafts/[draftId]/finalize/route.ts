@@ -67,8 +67,18 @@ export async function POST(
 
   try {
     const row = await runInsightFinalize(projectId, draftId, provider, { editedIssues });
+    const encodedInsightId = encodeURIComponent(row.sk);
+    const redirectUrl = `/projects/${projectId}/insights/${encodedInsightId}`;
+    const actions = row.pipeline?.actions ?? [];
+    const hypotheses = row.pipeline?.hypotheses ?? [];
     return Response.json({
-      insightId: encodeURIComponent(row.sk),
+      insightId: encodedInsightId,
+      encodedInsightId,
+      insightSk: row.sk,
+      redirectUrl,
+      actionCount: actions.length,
+      hypothesisCount: hypotheses.length,
+      hasContentPlan: actions.some((a) => (a.contentPlan?.recommendedActions?.length ?? 0) > 0),
       status: "ok",
       summary: row.summary,
       provider: row.modelProvider,
@@ -77,6 +87,16 @@ export async function POST(
     const message = e instanceof Error ? e.message : String(e);
     const stack = e instanceof Error ? e.stack : undefined;
     console.error("[finalize] error:", message, stack);
-    return Response.json({ error: message, detail: stack?.slice(0, 500), status: "failed" }, { status: 500 });
+    return Response.json(
+      {
+        error: message,
+        code: e instanceof Error ? e.name : "Error",
+        provider,
+        draftId,
+        detail: stack?.slice(0, 500),
+        status: "failed",
+      },
+      { status: 500 },
+    );
   }
 }

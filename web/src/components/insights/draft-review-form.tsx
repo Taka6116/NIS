@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +11,16 @@ import type { InsightIssue } from "@/types/nis";
 type Provider = "gemini" | "claude";
 
 type EditableIssue = InsightIssue & { adopted: boolean };
+type FinalizeResponse = {
+  status?: string;
+  error?: string;
+  detail?: string;
+  insightId?: string;
+  encodedInsightId?: string;
+  redirectUrl?: string;
+  actionCount?: number;
+  hypothesisCount?: number;
+};
 
 export function DraftReviewForm({
   projectId,
@@ -24,7 +33,6 @@ export function DraftReviewForm({
   issues: InsightIssue[];
   modelProvider: Provider;
 }) {
-  const router = useRouter();
   const [items, setItems] = useState<EditableIssue[]>(
     issues.map((i) => ({ ...i, adopted: true })),
   );
@@ -57,23 +65,52 @@ export function DraftReviewForm({
       return;
     }
     setPending(true);
-    const res = await fetch(
-      `/api/projects/${projectId}/insights/drafts/${encodeURIComponent(draftId)}/finalize`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, editedIssues: adopted }),
-      },
-    );
-    setPending(false);
-    if (!res.ok) {
-      const j = (await res.json().catch(() => null)) as { error?: string } | null;
-      setErr(j?.error ?? "示唆・仮説と打ち手の生成に失敗しました。");
-      return;
+    try {
+      const res = await fetch(
+        `/api/projects/${projectId}/insights/drafts/${encodeURIComponent(draftId)}/finalize`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider, editedIssues: adopted }),
+        },
+      );
+      const text = await res.text();
+      let json: FinalizeResponse | null = null;
+      try {
+        json = text ? (JSON.parse(text) as FinalizeResponse) : null;
+      } catch {
+        json = null;
+      }
+
+      if (!res.ok) {
+        const detail = json?.detail ? `\n${json.detail}` : "";
+        setErr(json?.error ? `${json.error}${detail}` : `示唆・仮説と打ち手の生成に失敗しました。(HTTP ${res.status})`);
+        return;
+      }
+
+      const redirectUrl =
+        json?.redirectUrl ??
+        (json?.encodedInsightId || json?.insightId
+          ? `/projects/${projectId}/insights/${json.encodedInsightId ?? json.insightId}`
+          : null);
+      if (!redirectUrl) {
+        setErr("生成は完了しましたが、遷移先 ID が API から返りませんでした。");
+        return;
+      }
+
+      const actionCount = typeof json?.actionCount === "number" ? json.actionCount : undefined;
+      const hypothesisCount = typeof json?.hypothesisCount === "number" ? json.hypothesisCount : undefined;
+      const countText =
+        actionCount !== undefined && hypothesisCount !== undefined
+          ? `（仮説 ${hypothesisCount} 件 / 打ち手 ${actionCount} 件）`
+          : "";
+      setMsg(`分析が完了しました。詳細画面に遷移します。${countText}`);
+      window.location.assign(redirectUrl);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "示唆・仮説と打ち手の生成に失敗しました。");
+    } finally {
+      setPending(false);
     }
-    const j = (await res.json()) as { insightId?: string };
-    setMsg("分析が完了しました。詳細画面に遷移します。");
-    if (j.insightId) router.push(`/projects/${projectId}/insights/${j.insightId}`);
   };
 
   return (

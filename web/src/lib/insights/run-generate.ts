@@ -7,6 +7,7 @@ import { generateInsightPipeline, generateStage12, generateStage34 } from "@/lib
 import {
   putInsight,
   putInsightDraft,
+  getInsight,
   getInsightDraft,
   deleteInsightDraft,
   draftSkFromId,
@@ -387,6 +388,13 @@ export async function runInsightFinalize(
     previousPeriod: { start: draft.previousPeriod.start, end: draft.previousPeriod.end },
   };
   await putInsight(row);
+  const saved = await getInsight(projectId, sk);
+  if (!saved) {
+    throw new Error("Insight finalized but saved record could not be read.");
+  }
+  if ((saved.pipeline?.hypotheses?.length ?? 0) === 0 || (saved.pipeline?.actions?.length ?? 0) === 0) {
+    throw new Error("Insight finalized but hypotheses/actions are empty.");
+  }
   await deleteInsightDraft(projectId, draftId).catch(() => {});
   void notifyFinalizeSlack(project.projectName, periodLabel, topPriority.action, projectId, sk).catch(() => {});
   return row;

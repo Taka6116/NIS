@@ -1,3 +1,5 @@
+export const maxDuration = 300;
+
 import { runInsightDraft, type InsightProvider, type InsightSegmentInput, type InsightWindowInput } from "@/lib/insights/run-generate";
 import { resolveMetricsWindow } from "@/lib/metrics/date-range";
 import { getSessionUserRole, requireSession, isAuthError } from "@/lib/rbac";
