@@ -312,7 +312,7 @@ export async function invokeInsightClaudeStage34(input: ClaudeStage34Input): Pro
     .filter(Boolean)
     .join("\n");
   const s4 = await invokeStage(client, modelId, STAGE4_SYSTEM, user4, isStage4, "stage4", {
-    maxTokens: 6000,
+    maxTokens: 8000,
   });
   raws.push({ stage: "stage 4", raw: s4.raw });
   tokens.push(s4.tokens);
@@ -430,7 +430,7 @@ export async function invokeInsightClaudeStage4Only(input: ClaudeStage4OnlyInput
   ]
     .filter(Boolean)
     .join("\n");
-  const s4 = await invokeStage(client, modelId, STAGE4_SYSTEM, user4, isStage4, "stage4", { maxTokens: 6000 });
+  const s4 = await invokeStage(client, modelId, STAGE4_SYSTEM, user4, isStage4, "stage4", { maxTokens: 8000 });
   const actions = s4.data.actions.map((a) => normalizeAction(a, knownFactIds));
   const doNotDo = normalizeDoNotDo(s4.data.doNotDo);
   const talkingPoints = normalizeTalkingPoints(s4.data.talkingPoints);
