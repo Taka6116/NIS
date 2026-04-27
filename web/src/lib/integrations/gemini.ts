@@ -321,6 +321,95 @@ export async function generateStage34(input: GeminiStage34Input): Promise<Gemini
   };
 }
 
+export type GeminiStage3OnlyInput = GeminiStage34Input;
+export type GeminiStage3OnlyResult = {
+  hypotheses: InsightHypothesisItem[];
+  rawJoined: string;
+  model: string;
+  tokenUsage?: number;
+};
+
+/** Stage3 のみ実行（仮説生成）。finalize を 2 ステップに分割する際に使用。 */
+export async function generateStage3Only(input: GeminiStage3OnlyInput): Promise<GeminiStage3OnlyResult> {
+  const { genAI, modelName } = resolveGenAI();
+  const baseModel = (systemInstruction: string) =>
+    genAI.getGenerativeModel({
+      model: modelName,
+      generationConfig: { responseMimeType: "application/json" },
+      systemInstruction,
+    });
+  const knownFactIds = new Set(input.facts.map((f) => f.id));
+  const user3 = buildStage3UserContent({
+    facts: input.facts,
+    issues: input.issues,
+    currentStart: input.currentStart,
+    currentEnd: input.currentEnd,
+    previousStart: input.previousStart,
+    previousEnd: input.previousEnd,
+    comparison: input.comparison,
+    historicalInsights: input.historicalInsights,
+  });
+  const s3 = await generateStageJson(baseModel(STAGE3_SYSTEM), user3, isStage3);
+  const hypotheses = s3.data.hypotheses.map((h) =>
+    normalizeHypothesis({ ...h, persona: h.persona ?? "merged" }, knownFactIds),
+  );
+  return { hypotheses, rawJoined: s3.raw, model: modelName, tokenUsage: s3.tokens };
+}
+
+export type GeminiStage4OnlyInput = GeminiStage34Input & {
+  hypotheses: InsightHypothesisItem[];
+};
+export type GeminiStage4OnlyResult = {
+  actions: InsightActionItem[];
+  summary: string;
+  topPriority: { action: string; reason: string };
+  doNotDo?: InsightDoNotDo[];
+  talkingPoints?: InsightTalkingPoints;
+  rawJoined: string;
+  model: string;
+  tokenUsage?: number;
+};
+
+/** Stage4 のみ実行（打ち手生成）。finalize を 2 ステップに分割する際に使用。 */
+export async function generateStage4Only(input: GeminiStage4OnlyInput): Promise<GeminiStage4OnlyResult> {
+  const { genAI, modelName } = resolveGenAI();
+  const baseModel = (systemInstruction: string) =>
+    genAI.getGenerativeModel({
+      model: modelName,
+      generationConfig: { responseMimeType: "application/json" },
+      systemInstruction,
+    });
+  const knownFactIds = new Set(input.facts.map((f) => f.id));
+  const kwBlock = input.kwSummary ? buildKwBlock(input.kwSummary) : "";
+  const user4 = [
+    "=== Stage1 facts ===",
+    JSON.stringify({ facts: input.facts }, null, 2),
+    "",
+    "=== Stage2 issues（ユーザー編集済み） ===",
+    JSON.stringify({ issues: input.issues }, null, 2),
+    "",
+    "=== Stage3 hypotheses ===",
+    JSON.stringify({ hypotheses: input.hypotheses }, null, 2),
+    kwBlock ? `\n${kwBlock}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const s4 = await generateStageJson(baseModel(STAGE4_SYSTEM), user4, isStage4);
+  const actions = s4.data.actions.map((a) => normalizeAction(a, knownFactIds));
+  const doNotDo = normalizeDoNotDo(s4.data.doNotDo);
+  const talkingPoints = normalizeTalkingPoints(s4.data.talkingPoints);
+  return {
+    actions,
+    summary: s4.data.summary,
+    topPriority: s4.data.topPriority,
+    doNotDo,
+    talkingPoints,
+    rawJoined: s4.raw,
+    model: modelName,
+    tokenUsage: s4.tokens,
+  };
+}
+
 export async function generateInsightPipeline(input: GeminiInput): Promise<GeminiPipelineResult> {
   const s12 = await generateStage12(input);
   const s34 = await generateStage34({ ...input, facts: s12.facts, issues: s12.issues });

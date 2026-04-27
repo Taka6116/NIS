@@ -11,7 +11,8 @@ import type { InsightIssue } from "@/types/nis";
 type Provider = "gemini" | "claude";
 
 type EditableIssue = InsightIssue & { adopted: boolean };
-type FinalizeResponse = {
+type Stage3Response = { status?: string; error?: string; detail?: string; hypothesisCount?: number };
+type Stage4Response = {
   status?: string;
   error?: string;
   detail?: string;
@@ -21,6 +22,8 @@ type FinalizeResponse = {
   actionCount?: number;
   hypothesisCount?: number;
 };
+
+type Step = "idle" | "stage3" | "stage4" | "done";
 
 export function DraftReviewForm({
   projectId,
@@ -37,15 +40,18 @@ export function DraftReviewForm({
     issues.map((i) => ({ ...i, adopted: true })),
   );
   const [provider, setProvider] = useState<Provider>(modelProvider);
-  const [pending, setPending] = useState(false);
+  const [step, setStep] = useState<Step>("idle");
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
+  const pending = step === "stage3" || step === "stage4";
   const adoptedCount = useMemo(() => items.filter((i) => i.adopted).length, [items]);
 
   const patch = (idx: number, next: Partial<EditableIssue>) => {
     setItems((cur) => cur.map((it, i) => (i === idx ? { ...it, ...next } : it)));
   };
+
+  const baseUrl = `/api/projects/${projectId}/insights/drafts/${encodeURIComponent(draftId)}/finalize`;
 
   const submit = async () => {
     setErr(null);
@@ -64,52 +70,69 @@ export function DraftReviewForm({
       setErr("採用する課題を 1 件以上選んでください。");
       return;
     }
-    setPending(true);
-    try {
-      const res = await fetch(
-        `/api/projects/${projectId}/insights/drafts/${encodeURIComponent(draftId)}/finalize`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, editedIssues: adopted }),
-        },
-      );
-      const text = await res.text();
-      let json: FinalizeResponse | null = null;
-      try {
-        json = text ? (JSON.parse(text) as FinalizeResponse) : null;
-      } catch {
-        json = null;
-      }
 
-      if (!res.ok) {
-        const detail = json?.detail ? `\n${json.detail}` : "";
-        setErr(json?.error ? `${json.error}${detail}` : `示唆・仮説と打ち手の生成に失敗しました。(HTTP ${res.status})`);
+    // ── Step A: Stage3（仮説生成）
+    setStep("stage3");
+    try {
+      const res3 = await fetch(`${baseUrl}/stage3`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, editedIssues: adopted }),
+      });
+      const text3 = await res3.text();
+      let json3: Stage3Response | null = null;
+      try { json3 = text3 ? (JSON.parse(text3) as Stage3Response) : null; } catch { json3 = null; }
+      if (!res3.ok) {
+        const detail = json3?.detail ? `\n${json3.detail}` : "";
+        setErr(json3?.error ? `[仮説生成] ${json3.error}${detail}` : `仮説生成に失敗しました。(HTTP ${res3.status})`);
+        setStep("idle");
         return;
       }
+    } catch (e) {
+      setErr(e instanceof Error ? `[仮説生成] ${e.message}` : "仮説生成に失敗しました。");
+      setStep("idle");
+      return;
+    }
 
+    // ── Step B: Stage4（打ち手生成）
+    setStep("stage4");
+    try {
+      const res4 = await fetch(`${baseUrl}/stage4`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+      const text4 = await res4.text();
+      let json4: Stage4Response | null = null;
+      try { json4 = text4 ? (JSON.parse(text4) as Stage4Response) : null; } catch { json4 = null; }
+      if (!res4.ok) {
+        const detail = json4?.detail ? `\n${json4.detail}` : "";
+        setErr(json4?.error ? `[打ち手生成] ${json4.error}${detail}` : `打ち手生成に失敗しました。(HTTP ${res4.status})`);
+        setStep("idle");
+        return;
+      }
       const redirectUrl =
-        json?.redirectUrl ??
-        (json?.encodedInsightId || json?.insightId
-          ? `/projects/${projectId}/insights/${json.encodedInsightId ?? json.insightId}`
+        json4?.redirectUrl ??
+        (json4?.encodedInsightId || json4?.insightId
+          ? `/projects/${projectId}/insights/${json4.encodedInsightId ?? json4.insightId}`
           : null);
       if (!redirectUrl) {
         setErr("生成は完了しましたが、遷移先 ID が API から返りませんでした。");
+        setStep("idle");
         return;
       }
-
-      const actionCount = typeof json?.actionCount === "number" ? json.actionCount : undefined;
-      const hypothesisCount = typeof json?.hypothesisCount === "number" ? json.hypothesisCount : undefined;
+      const actionCount = typeof json4?.actionCount === "number" ? json4.actionCount : undefined;
+      const hypothesisCount = typeof json4?.hypothesisCount === "number" ? json4.hypothesisCount : undefined;
       const countText =
         actionCount !== undefined && hypothesisCount !== undefined
           ? `（仮説 ${hypothesisCount} 件 / 打ち手 ${actionCount} 件）`
           : "";
       setMsg(`分析が完了しました。詳細画面に遷移します。${countText}`);
+      setStep("done");
       window.location.assign(redirectUrl);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "示唆・仮説と打ち手の生成に失敗しました。");
-    } finally {
-      setPending(false);
+      setErr(e instanceof Error ? `[打ち手生成] ${e.message}` : "打ち手生成に失敗しました。");
+      setStep("idle");
     }
   };
 
@@ -216,16 +239,21 @@ export function DraftReviewForm({
             </select>
           </div>
           <Button onClick={submit} disabled={pending} className="rounded-xl">
-            {pending ? "示唆・打ち手を生成中…" : "打ち手を生成 →"}
+            {step === "stage3" ? "仮説を生成中… (1/2)" : step === "stage4" ? "打ち手を生成中… (2/2)" : "打ち手を生成 →"}
           </Button>
         </div>
         {pending ? (
           <div className="mt-3 space-y-2">
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
-              <div className="h-full w-1/3 animate-pulse rounded-full bg-gradient-to-r from-violet-400 to-cyan-400" />
+              <div
+                className="h-full animate-pulse rounded-full bg-gradient-to-r from-violet-400 to-cyan-400 transition-all duration-500"
+                style={{ width: step === "stage3" ? "40%" : "80%" }}
+              />
             </div>
             <p className="text-xs text-slate-400">
-              Stage 3 Hypotheses → Stage 4 Actions を実行中です。
+              {step === "stage3"
+                ? "Stage 3: 仮説・示唆を生成しています…"
+                : "Stage 4: 打ち手・アクションを生成しています…"}
             </p>
           </div>
         ) : null}

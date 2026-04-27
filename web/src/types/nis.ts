@@ -404,6 +404,8 @@ export type InsightDraftRecord = {
   previousPeriod: { start: string; end: string };
   facts: InsightFact[];
   issues: InsightIssue[];
+  /** Stage3 完了後に中間保存される仮説リスト */
+  hypotheses?: InsightHypothesisItem[];
   modelProvider: "gemini" | "claude";
   modelVersion: string;
   rawPrompt?: string;

@@ -296,6 +296,163 @@ export async function runInsightDraft(
   return row;
 }
 
+/** Step 2a: Issues から Hypotheses だけ生成して Draft に中間保存。 */
+export async function runInsightStage3(
+  projectId: string,
+  draftId: string,
+  provider: InsightProvider,
+  overrides?: { editedIssues?: InsightIssue[] },
+): Promise<{ hypotheses: import("@/types/nis").InsightHypothesisItem[] }> {
+  const draft = await getInsightDraft(projectId, draftId);
+  if (!draft) throw new Error("Draft not found or expired");
+
+  const window: ResolvedMetricsWindow = {
+    start: draft.period.start,
+    end: draft.period.end,
+    prevStart: draft.previousPeriod.start,
+    prevEnd: draft.previousPeriod.end,
+    comparison: draft.comparison,
+    source: "custom",
+  };
+
+  const { commonInput } = await buildCommonInput(projectId, window, {
+    segment: draft.segment,
+    loadHistory: true,
+  });
+
+  const issues = overrides?.editedIssues ?? draft.issues;
+  const facts = draft.facts;
+  const stage3Input = { ...commonInput, facts, issues, multiPersona: false as const, selfCritique: false as const };
+
+  let hypotheses: import("@/types/nis").InsightHypothesisItem[];
+
+  if (provider === "claude") {
+    const { invokeInsightClaudeStage3Only } = await import("@/lib/integrations/claude-bedrock");
+    const r = await invokeInsightClaudeStage3Only(stage3Input);
+    hypotheses = r.hypotheses;
+  } else {
+    const { generateStage3Only } = await import("@/lib/integrations/gemini");
+    const r = await generateStage3Only(stage3Input);
+    hypotheses = r.hypotheses;
+  }
+
+  // 中間結果を Draft に上書き保存
+  const updated: import("@/types/nis").InsightDraftRecord = {
+    ...draft,
+    issues,
+    hypotheses,
+  };
+  await putInsightDraft(updated);
+
+  return { hypotheses };
+}
+
+/** Step 2b: Draft に保存済みの Hypotheses から Actions を生成して InsightRecord を確定保存。 */
+export async function runInsightStage4(
+  projectId: string,
+  draftId: string,
+  provider: InsightProvider,
+): Promise<InsightRecord> {
+  const draft = await getInsightDraft(projectId, draftId);
+  if (!draft) throw new Error("Draft not found or expired");
+
+  const hypotheses = (draft as import("@/types/nis").InsightDraftRecord & { hypotheses?: import("@/types/nis").InsightHypothesisItem[] }).hypotheses;
+  if (!hypotheses || hypotheses.length === 0) throw new Error("Stage3 hypotheses not found in draft. Run stage3 first.");
+
+  const window: ResolvedMetricsWindow = {
+    start: draft.period.start,
+    end: draft.period.end,
+    prevStart: draft.previousPeriod.start,
+    prevEnd: draft.previousPeriod.end,
+    comparison: draft.comparison,
+    source: "custom",
+  };
+
+  const { project, commonInput, bundle, periodLabel } = await buildCommonInput(projectId, window, {
+    segment: draft.segment,
+    loadHistory: true,
+  });
+
+  const facts = draft.facts;
+  const issues = draft.issues;
+
+  let actions: import("@/types/nis").InsightActionItem[];
+  let summary: string;
+  let topPriority: { action: string; reason: string };
+  let doNotDo: import("@/types/nis").InsightDoNotDo[] | undefined;
+  let talkingPoints: import("@/types/nis").InsightTalkingPoints | undefined;
+  let rawJoined: string;
+  let modelVersion: string;
+  let tokenUsage: number | undefined;
+
+  if (provider === "claude") {
+    const { invokeInsightClaudeStage4Only } = await import("@/lib/integrations/claude-bedrock");
+    const r = await invokeInsightClaudeStage4Only({ ...commonInput, facts, issues, hypotheses });
+    actions = r.actions;
+    summary = r.summary;
+    topPriority = r.topPriority;
+    doNotDo = r.doNotDo;
+    talkingPoints = r.talkingPoints;
+    rawJoined = r.rawJoined;
+    modelVersion = r.modelId;
+    tokenUsage = r.tokenUsage;
+  } else {
+    const { generateStage4Only } = await import("@/lib/integrations/gemini");
+    const r = await generateStage4Only({ ...commonInput, facts, issues, hypotheses });
+    actions = r.actions;
+    summary = r.summary;
+    topPriority = r.topPriority;
+    doNotDo = r.doNotDo;
+    talkingPoints = r.talkingPoints;
+    rawJoined = r.rawJoined;
+    modelVersion = r.model;
+    tokenUsage = r.tokenUsage;
+  }
+
+  let pipeline: import("@/types/nis").InsightPipeline = { facts, issues, hypotheses, actions };
+
+  // B2: 差分計算
+  const prev = pickPreviousInsight(commonInput.historicalInsights ?? [], new Date().toISOString());
+  const diffVsPrevious = computeIssueDiff(pipeline.issues, prev?.pipeline?.issues, prev?.sk);
+  const upgradedIssues = upgradeSeverityForRepeated(pipeline.issues, diffVsPrevious.persistingIssueIds);
+  pipeline = { ...pipeline, issues: upgradedIssues };
+
+  const findings = deriveFindingsFromPipeline(pipeline);
+  const generatedAtIso = new Date().toISOString();
+  const sk = `${generatedAtIso}#weekly`;
+
+  const row: InsightRecord = {
+    projectId,
+    sk,
+    type: "weekly",
+    period: { start: bundle.range.start, end: bundle.range.end },
+    summary,
+    findings,
+    topPriority,
+    pipeline,
+    modelProvider: provider,
+    rawPrompt: rawJoined.slice(0, 12000),
+    modelVersion,
+    tokenUsage,
+    generatedAtIso,
+    doNotDo,
+    talkingPoints,
+    diffVsPrevious,
+    segment: draft.segment,
+    comparison: draft.comparison,
+    previousPeriod: { start: draft.previousPeriod.start, end: draft.previousPeriod.end },
+  };
+  await putInsight(row);
+  const saved = await getInsight(projectId, sk);
+  if (!saved) throw new Error("Insight finalized but saved record could not be read.");
+  if ((saved.pipeline?.hypotheses?.length ?? 0) === 0 || (saved.pipeline?.actions?.length ?? 0) === 0) {
+    throw new Error("Insight finalized but hypotheses/actions are empty.");
+  }
+  await deleteInsightDraft(projectId, draftId).catch(() => {});
+  void notifyFinalizeSlack(project.projectName, periodLabel, topPriority.action, projectId, sk).catch(() => {});
+  return row;
+}
+
 /** Step 2: ユーザー編集済みの Issues を入力し、Hypotheses + Actions を生成して最終保存。 */
 export async function runInsightFinalize(
   projectId: string,

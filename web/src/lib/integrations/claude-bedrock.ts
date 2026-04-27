@@ -362,6 +362,90 @@ export async function invokeInsightClaudeStage34(input: ClaudeStage34Input): Pro
   };
 }
 
+export type ClaudeStage3OnlyInput = ClaudeStage34Input;
+
+export type ClaudeStage3OnlyResult = {
+  hypotheses: InsightHypothesisItem[];
+  rawJoined: string;
+  modelId: string;
+  tokenUsage?: number;
+};
+
+/** Stage3 のみ実行（仮説生成）。finalize を 2 ステップに分割する際に使用。 */
+export async function invokeInsightClaudeStage3Only(input: ClaudeStage3OnlyInput): Promise<ClaudeStage3OnlyResult> {
+  const { client, modelId } = resolveClient();
+  const knownFactIds = new Set(input.facts.map((f) => f.id));
+  const user3 = buildStage3UserContent({
+    facts: input.facts,
+    issues: input.issues,
+    currentStart: input.currentStart,
+    currentEnd: input.currentEnd,
+    previousStart: input.previousStart,
+    previousEnd: input.previousEnd,
+    comparison: input.comparison,
+    historicalInsights: input.historicalInsights,
+  });
+  const s3 = await invokeStage(client, modelId, STAGE3_SYSTEM, user3, isStage3, "stage3");
+  const hypotheses = s3.data.hypotheses.map((h) =>
+    normalizeHypothesis({ ...h, persona: h.persona ?? "merged" }, knownFactIds),
+  );
+  return {
+    hypotheses,
+    rawJoined: s3.raw,
+    modelId,
+    tokenUsage: s3.tokens,
+  };
+}
+
+export type ClaudeStage4OnlyInput = ClaudeStage34Input & {
+  hypotheses: InsightHypothesisItem[];
+};
+
+export type ClaudeStage4OnlyResult = {
+  actions: InsightActionItem[];
+  summary: string;
+  topPriority: { action: string; reason: string };
+  doNotDo?: InsightDoNotDo[];
+  talkingPoints?: InsightTalkingPoints;
+  rawJoined: string;
+  modelId: string;
+  tokenUsage?: number;
+};
+
+/** Stage4 のみ実行（打ち手生成）。finalize を 2 ステップに分割する際に使用。 */
+export async function invokeInsightClaudeStage4Only(input: ClaudeStage4OnlyInput): Promise<ClaudeStage4OnlyResult> {
+  const { client, modelId } = resolveClient();
+  const knownFactIds = new Set(input.facts.map((f) => f.id));
+  const kwBlock = input.kwSummary ? buildKwBlock(input.kwSummary) : "";
+  const user4 = [
+    "=== Stage1 facts ===",
+    JSON.stringify({ facts: input.facts }, null, 2),
+    "",
+    "=== Stage2 issues（ユーザー編集済み） ===",
+    JSON.stringify({ issues: input.issues }, null, 2),
+    "",
+    "=== Stage3 hypotheses ===",
+    JSON.stringify({ hypotheses: input.hypotheses }, null, 2),
+    kwBlock ? `\n${kwBlock}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const s4 = await invokeStage(client, modelId, STAGE4_SYSTEM, user4, isStage4, "stage4", { maxTokens: 6000 });
+  const actions = s4.data.actions.map((a) => normalizeAction(a, knownFactIds));
+  const doNotDo = normalizeDoNotDo(s4.data.doNotDo);
+  const talkingPoints = normalizeTalkingPoints(s4.data.talkingPoints);
+  return {
+    actions,
+    summary: s4.data.summary,
+    topPriority: s4.data.topPriority,
+    doNotDo,
+    talkingPoints,
+    rawJoined: s4.raw,
+    modelId,
+    tokenUsage: s4.tokens,
+  };
+}
+
 export async function invokeInsightClaudeBedrock(input: ClaudeBedrockInput): Promise<ClaudeBedrockResult> {
   const stage12 = await invokeInsightClaudeStage12(input);
   const stage34 = await invokeInsightClaudeStage34({
