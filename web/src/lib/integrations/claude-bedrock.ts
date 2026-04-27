@@ -288,18 +288,14 @@ export async function invokeInsightClaudeStage34(input: ClaudeStage34Input): Pro
   const raws: Array<{ stage: string; raw: string }> = [];
   const tokens: Array<number | undefined> = [];
 
-  let hypotheses: InsightHypothesisItem[];
-  if (input.multiPersona !== false) {
-    const mp = await runStage3MultiPersona(client, modelId, user3, knownFactIds);
-    hypotheses = mp.hypotheses;
-    raws.push(...mp.raws);
-    tokens.push(mp.tokens);
-  } else {
-    const s3 = await invokeStage(client, modelId, STAGE3_SYSTEM, user3, isStage3, "stage3");
-    raws.push({ stage: "stage 3", raw: s3.raw });
-    tokens.push(s3.tokens);
-    hypotheses = s3.data.hypotheses.map((h) => normalizeHypothesis({ ...h, persona: h.persona ?? "merged" }, knownFactIds));
-  }
+  // multi-persona は処理時間が 90〜120 秒増えるため、Vercel 300s 制限内で収めるため
+  // 常に 1 回（STAGE3_SYSTEM / merged）で実行する。
+  const s3 = await invokeStage(client, modelId, STAGE3_SYSTEM, user3, isStage3, "stage3");
+  raws.push({ stage: "stage 3", raw: s3.raw });
+  tokens.push(s3.tokens);
+  const hypotheses: InsightHypothesisItem[] = s3.data.hypotheses.map((h) =>
+    normalizeHypothesis({ ...h, persona: h.persona ?? "merged" }, knownFactIds),
+  );
 
   const kwBlock = input.kwSummary ? buildKwBlock(input.kwSummary) : "";
   const user4 = [
@@ -316,7 +312,7 @@ export async function invokeInsightClaudeStage34(input: ClaudeStage34Input): Pro
     .filter(Boolean)
     .join("\n");
   const s4 = await invokeStage(client, modelId, STAGE4_SYSTEM, user4, isStage4, "stage4", {
-    maxTokens: 12000,
+    maxTokens: 6000,
   });
   raws.push({ stage: "stage 4", raw: s4.raw });
   tokens.push(s4.tokens);
@@ -325,7 +321,9 @@ export async function invokeInsightClaudeStage34(input: ClaudeStage34Input): Pro
   let doNotDo = normalizeDoNotDo(s4.data.doNotDo);
   const talkingPoints = normalizeTalkingPoints(s4.data.talkingPoints);
 
-  if (input.selfCritique !== false) {
+  // Stage4.5 は Vercel 300s 制限内に収めるためデフォルト OFF。
+  // 明示的に selfCritique: true を渡した場合のみ実行する。
+  if (input.selfCritique === true) {
     try {
       const s45user = [
         "=== 現在の actions ===",
@@ -347,7 +345,6 @@ export async function invokeInsightClaudeStage34(input: ClaudeStage34Input): Pro
         doNotDo = [...(doNotDo ?? []), ...merged.additionalDoNotDo];
       }
     } catch (e) {
-      // Self-critique 失敗は致命ではないので握る
       raws.push({ stage: "stage 4.5", raw: `error: ${e instanceof Error ? e.message : String(e)}` });
     }
   }

@@ -258,20 +258,13 @@ export async function generateStage34(input: GeminiStage34Input): Promise<Gemini
   const raws: string[] = [];
   const tokens: Array<number | undefined> = [];
 
-  let hypotheses: InsightHypothesisItem[];
-  if (input.multiPersona !== false) {
-    const mp = await runGeminiStage3MultiPersona(baseModel, user3, knownFactIds);
-    hypotheses = mp.hypotheses;
-    raws.push(...mp.raws);
-    tokens.push(mp.tokens);
-  } else {
-    const s3 = await generateStageJson(baseModel(STAGE3_SYSTEM), user3, isStage3);
-    raws.push(`stage 3: ${s3.raw}`);
-    tokens.push(s3.tokens);
-    hypotheses = s3.data.hypotheses.map((h) =>
-      normalizeHypothesis({ ...h, persona: h.persona ?? "merged" }, knownFactIds),
-    );
-  }
+  // multi-persona は処理時間が大幅増加するため常に 1 回で実行する。
+  const s3 = await generateStageJson(baseModel(STAGE3_SYSTEM), user3, isStage3);
+  raws.push(`stage 3: ${s3.raw}`);
+  tokens.push(s3.tokens);
+  const hypotheses: InsightHypothesisItem[] = s3.data.hypotheses.map((h) =>
+    normalizeHypothesis({ ...h, persona: h.persona ?? "merged" }, knownFactIds),
+  );
 
   const kwBlock = input.kwSummary ? buildKwBlock(input.kwSummary) : "";
   const user4 = [
@@ -295,7 +288,8 @@ export async function generateStage34(input: GeminiStage34Input): Promise<Gemini
   let doNotDo = normalizeDoNotDo(s4.data.doNotDo);
   const talkingPoints = normalizeTalkingPoints(s4.data.talkingPoints);
 
-  if (input.selfCritique !== false) {
+  // Stage4.5 はデフォルト OFF。明示的に selfCritique: true の場合のみ実行。
+  if (input.selfCritique === true) {
     try {
       const s45 = await generateStageJson<Stage45Payload>(
         baseModel(STAGE4_5_SYSTEM),
