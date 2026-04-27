@@ -1,4 +1,12 @@
 {
+  "functions": {
+    "src/app/api/projects/[projectId]/insights/drafts/[draftId]/finalize/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/projects/[projectId]/insights/draft/route.ts": {
+      "maxDuration": 300
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/sync-data",

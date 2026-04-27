@@ -1,3 +1,5 @@
+export const maxDuration = 300;
+
 import { runInsightFinalize, type InsightProvider } from "@/lib/insights/run-generate";
 import { getSessionUserRole, requireSession, isAuthError } from "@/lib/rbac";
 import type { InsightIssue } from "@/types/nis";

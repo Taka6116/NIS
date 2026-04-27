@@ -194,11 +194,17 @@ async function runGeminiStage3MultiPersona(
     "ux-researcher",
     "cro-specialist",
   ];
+
+  const personaResults = await Promise.all(
+    personas.map((p) =>
+      generateStageJson(getModel(buildStage3SystemForPersona(p)), userContent, isStage3).then((r) => ({ p, r })),
+    ),
+  );
+
   const raws: string[] = [];
   const tokens: Array<number | undefined> = [];
   const perPersona: Stage3Payload[] = [];
-  for (const p of personas) {
-    const r = await generateStageJson(getModel(buildStage3SystemForPersona(p)), userContent, isStage3);
+  for (const { p, r } of personaResults) {
     raws.push(`stage 3 ${p}: ${r.raw}`);
     tokens.push(r.tokens);
     perPersona.push({

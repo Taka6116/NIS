@@ -224,18 +224,19 @@ async function runStage3MultiPersona(
     "ux-researcher",
     "cro-specialist",
   ];
+
+  const personaResults = await Promise.all(
+    personas.map((p) =>
+      invokeStage(client, modelId, buildStage3SystemForPersona(p), userContent, isStage3, `stage3:${p}`).then(
+        (r) => ({ p, r }),
+      ),
+    ),
+  );
+
   const raws: Array<{ stage: string; raw: string }> = [];
   const tokensAll: Array<number | undefined> = [];
   const perPersona: Stage3Payload[] = [];
-  for (const p of personas) {
-    const r = await invokeStage(
-      client,
-      modelId,
-      buildStage3SystemForPersona(p),
-      userContent,
-      isStage3,
-      `stage3:${p}`,
-    );
+  for (const { p, r } of personaResults) {
     raws.push({ stage: `stage 3 ${p}`, raw: r.raw });
     tokensAll.push(r.tokens);
     perPersona.push({
