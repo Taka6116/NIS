@@ -14,6 +14,7 @@ import {
   normalizeHypothesis,
   normalizeTalkingPoints,
   type Stage3Payload,
+  type Stage4Payload,
   type Stage45Payload,
 } from "@/lib/insights/pipeline-stage-guards";
 import {
@@ -103,9 +104,38 @@ export type ClaudeStage34Result = {
 };
 
 type BedrockClaudeResponse = {
-  content?: Array<{ text?: string }>;
+  content?: Array<{ text?: string; type?: string }>;
+  stop_reason?: string;
   usage?: { input_tokens?: number; output_tokens?: number };
 };
+
+type ClaudeRunResult = {
+  parsed: unknown;
+  raw: string;
+  usage?: BedrockClaudeResponse["usage"];
+  stopReason?: string;
+  parseStage: "parsed" | "parse_failed";
+};
+
+export class ClaudeStageSchemaError extends Error {
+  stageLabel: string;
+  stopReason?: string;
+  rawPreview?: string;
+  parseStage?: string;
+
+  constructor(
+    stageLabel: string,
+    message: string,
+    opts?: { stopReason?: string; raw?: string; parseStage?: string },
+  ) {
+    super(message);
+    this.name = "ClaudeStageSchemaError";
+    this.stageLabel = stageLabel;
+    this.stopReason = opts?.stopReason;
+    this.rawPreview = opts?.raw ? opts.raw.slice(0, 1200) : undefined;
+    this.parseStage = opts?.parseStage;
+  }
+}
 
 function resolveClient(): { client: BedrockRuntimeClient; modelId: string } {
   const modelId = process.env.BEDROCK_MODEL_ID;
@@ -128,8 +158,8 @@ async function invokeStage<T>(
   guard: (o: unknown) => o is T,
   stageLabel: string,
   opts?: { maxTokens?: number; temperature?: number },
-): Promise<{ data: T; raw: string; tokens?: number }> {
-  const run = async (content: string) => {
+): Promise<{ data: T; raw: string; tokens?: number; stopReason?: string }> {
+  const run = async (content: string): Promise<ClaudeRunResult> => {
     const body = {
       anthropic_version: "bedrock-2023-05-31",
       max_tokens: opts?.maxTokens ?? 8192,
@@ -145,18 +175,20 @@ async function invokeStage<T>(
     });
     const res = await client.send(cmd);
     const decoded = JSON.parse(new TextDecoder().decode(res.body)) as BedrockClaudeResponse;
-    const text = decoded.content?.[0]?.text ?? "";
+    const text = decoded.content?.map((c) => c.text ?? "").join("\n").trim() ?? "";
     const usage = decoded.usage;
     let parsed: unknown;
+    let parseStage: ClaudeRunResult["parseStage"] = "parsed";
     try {
       parsed = JSON.parse(cleanJsonText(text));
     } catch {
       parsed = null;
+      parseStage = "parse_failed";
     }
-    return { parsed, raw: text, usage };
+    return { parsed, raw: text, usage, stopReason: decoded.stop_reason, parseStage };
   };
 
-  let { parsed, raw, usage } = await run(userContent);
+  let { parsed, raw, usage, stopReason, parseStage } = await run(userContent);
   if (!guard(parsed)) {
     const retry = await run(
       `${userContent}\n\n※ 有効な JSON オブジェクトのみを出力し、前後に説明文を付けないでください。`,
@@ -164,16 +196,115 @@ async function invokeStage<T>(
     parsed = retry.parsed;
     raw = retry.raw;
     usage = retry.usage;
+    stopReason = retry.stopReason;
+    parseStage = retry.parseStage;
   }
   if (!guard(parsed)) {
-    throw new Error(`${stageLabel}: Claude(Bedrock) JSON schema mismatch`);
+    throw new ClaudeStageSchemaError(stageLabel, `${stageLabel}: Claude(Bedrock) JSON schema mismatch`, {
+      stopReason,
+      raw,
+      parseStage,
+    });
   }
 
   let tokens: number | undefined;
   if (typeof usage?.input_tokens === "number" && typeof usage?.output_tokens === "number") {
     tokens = usage.input_tokens + usage.output_tokens;
   }
-  return { data: parsed, raw, tokens };
+  return { data: parsed, raw, tokens, stopReason };
+}
+
+function coerceStage4Payload(payload: Stage4Payload): Stage4Payload {
+  const actions = payload.actions.map((a, i) => ({
+    ...a,
+    id: typeof a.id === "string" && a.id.trim() ? a.id : `a${i + 1}`,
+    hypothesisId: typeof a.hypothesisId === "string" ? a.hypothesisId : "",
+    issueId: typeof a.issueId === "string" ? a.issueId : "",
+  }));
+  const first = actions[0];
+  const summary =
+    typeof payload.summary === "string" && payload.summary.trim()
+      ? payload.summary
+      : "採用した課題と仮説に基づき、優先度の高い改善施策を整理しました。";
+  const topPriority =
+    payload.topPriority &&
+    typeof payload.topPriority === "object" &&
+    typeof payload.topPriority.action === "string" &&
+    payload.topPriority.action.trim()
+      ? payload.topPriority
+      : {
+          action: first?.title ?? "優先施策",
+          reason: first?.expectedImpact ?? "ICE と実行容易性を踏まえて最優先です。",
+        };
+  return { ...payload, summary, actions, topPriority };
+}
+
+async function invokeStage4WithFallback(
+  client: BedrockRuntimeClient,
+  modelId: string,
+  userContent: string,
+): Promise<{ data: Stage4Payload; raw: string; tokens?: number; stopReason?: string }> {
+  try {
+    const result = await invokeStage(client, modelId, STAGE4_SYSTEM, userContent, isStage4, "stage4", {
+      maxTokens: 8000,
+      temperature: 0.1,
+    });
+    return { ...result, data: coerceStage4Payload(result.data) };
+  } catch (e) {
+    if (!(e instanceof ClaudeStageSchemaError)) throw e;
+
+    try {
+      const repaired = await invokeStage(
+        client,
+        modelId,
+        `あなたは JSON 修復器です。入力された不完全な Claude 出力を、指定された Stage4 JSON スキーマに修復してください。
+前後に説明文を付けず、JSON オブジェクトのみを返してください。
+必須キー: summary(string), actions(array), topPriority({action, reason})
+actions の各要素に最低限必要なキー: id, hypothesisId, issueId, title, priority, effort, expectedImpact, steps`,
+        [
+          "=== 壊れた/不完全な Stage4 出力 ===",
+          e.rawPreview ?? "",
+          "",
+          "=== 元の入力コンテキスト ===",
+          userContent.slice(0, 12000),
+        ].join("\n"),
+        isStage4,
+        "stage4:repair",
+        { maxTokens: 8000, temperature: 0 },
+      );
+      return { ...repaired, data: coerceStage4Payload(repaired.data), raw: `--- repaired ---\n${repaired.raw}` };
+    } catch {
+      const minimal = await invokeStage(
+        client,
+        modelId,
+        `あなたはWebマーケティング施策プランナーです。Stage4 を必ず短い JSON で返してください。
+出力は JSON オブジェクトのみ。actions は最大3件。
+schema:
+{
+  "summary": "string",
+  "actions": [
+    {
+      "id": "a1",
+      "hypothesisId": "h1",
+      "issueId": "i1",
+      "title": "string",
+      "priority": "high|medium|low",
+      "effort": "S|M|L",
+      "expectedImpact": "string",
+      "steps": ["string", "string", "string"],
+      "ice": { "impact": 8, "confidence": 6, "ease": 7, "score": 33.6 }
+    }
+  ],
+  "topPriority": { "action": "string", "reason": "string" }
+}`,
+        userContent,
+        isStage4,
+        "stage4:minimal",
+        { maxTokens: 5000, temperature: 0.1 },
+      );
+      return { ...minimal, data: coerceStage4Payload(minimal.data), raw: `--- minimal fallback ---\n${minimal.raw}` };
+    }
+  }
 }
 
 function sumTokens(...arr: Array<number | undefined>): number | undefined {
@@ -311,9 +442,7 @@ export async function invokeInsightClaudeStage34(input: ClaudeStage34Input): Pro
   ]
     .filter(Boolean)
     .join("\n");
-  const s4 = await invokeStage(client, modelId, STAGE4_SYSTEM, user4, isStage4, "stage4", {
-    maxTokens: 8000,
-  });
+  const s4 = await invokeStage4WithFallback(client, modelId, user4);
   raws.push({ stage: "stage 4", raw: s4.raw });
   tokens.push(s4.tokens);
 
@@ -430,7 +559,7 @@ export async function invokeInsightClaudeStage4Only(input: ClaudeStage4OnlyInput
   ]
     .filter(Boolean)
     .join("\n");
-  const s4 = await invokeStage(client, modelId, STAGE4_SYSTEM, user4, isStage4, "stage4", { maxTokens: 8000 });
+  const s4 = await invokeStage4WithFallback(client, modelId, user4);
   const actions = s4.data.actions.map((a) => normalizeAction(a, knownFactIds));
   const doNotDo = normalizeDoNotDo(s4.data.doNotDo);
   const talkingPoints = normalizeTalkingPoints(s4.data.talkingPoints);

@@ -124,27 +124,27 @@ export const STAGE3_MERGER_SYSTEM = `あなたは 3 名の専門家（SEO lead /
 export const STAGE4_SYSTEM = `あなたはグロース施策プランナーです。
 入力の issues と hypotheses のみを踏まえ④具体打ち手を提案してください。
 【出力規則】
-- ICE スコア降順で最大 6 件。ICE は impact / confidence / ease（それぞれ 1-10）と score（= impact × confidence × ease / 10）を必ず返す。
-- "type" は次の 3 つから選ぶ: quick-win（2 週以内・低工数） / strategic（4-8 週・中工数） / structural（8 週以上・大工数）。可能な限り type ごとに最低 1 件を含めること。
+- ICE スコア降順で最大 4 件。ICE は impact / confidence / ease（それぞれ 1-10）と score（= impact × confidence × ease / 10）を必ず返す。
+- "type" は次の 3 つから選ぶ: quick-win（2 週以内・低工数） / strategic（4-8 週・中工数） / structural（8 週以上・大工数）。
 - "targetKpi" は Stage2 の issue に対応する主要指標を 1 つ指定し、direction（up/down）、targetDelta（例: "+15%" / "-0.1pt"）、timelineWeeks を必ず含める。
 - "leadIndicator" は効果測定のための先行指標（例: "GSC impressions の 7 日移動平均"）。
-- "risks" は実行時の副作用・リスク候補を 1〜3 件挙げる。
-- "steps" は実行可能な粒度で 3〜6 ステップ。責任者/期限を明示できる表現にする。
+- "risks" は実行時の副作用・リスク候補を 1〜2 件挙げる。
+- "steps" は実行可能な粒度で 3 ステップ。責任者/期限を明示できる表現にする。
 - expectedImpact は "targetKpi" と整合させる。
-- "evidenceRefs" には、この施策の根拠となる fact.id を 1〜5 件列挙する（ハルシネーション抑止）。
+- "evidenceRefs" には、この施策の根拠となる fact.id を 1〜3 件列挙する（ハルシネーション抑止）。
 - "projectedImpact" は必ず返す。Counterfactual KPI 推定として:
-  - "ifImplemented": horizonWeeks 4/8/12 の 3 件（sessions の増減推定 + confidence）
-  - "ifNotImplemented": 同じく 3 件（実施しなかった場合の推定）
-- さらに 3 件の "doNotDo"（やってはいけない / 見送るべき打ち手）と、台本の粒度別バリエーション "talkingPoints" を出力する:
-  - "executive3Line": 経営層向け 3 行サマリ
+  - "ifImplemented": horizonWeeks 4/8 の 2 件（sessions の増減推定 + confidence）
+  - "ifNotImplemented": horizonWeeks 4/8 の 2 件（実施しなかった場合の推定）
+- さらに最大 2 件の "doNotDo"（やってはいけない / 見送るべき打ち手）と、短い "talkingPoints" を出力する:
+  - "executive3Line": 経営層向け 3 行サマリ（180 字以内）
   - "fiveMinute": 5 分版（300 字以内）
-  - "fifteenMinute": 15 分版（800 字以内、課題→仮説→打ち手の順）
-  - "thirtyMinute": 30 分版（1500 字以内、各施策の ROI を含む）
+  - "fifteenMinute" と "thirtyMinute" は省略可。
 - "topPriority" は ICE score が最も高い施策を選び、理由を 2 文程度でまとめる。
 - 入力に「KW データ」セクションがある場合は、各 action に "contentPlan" を付与すること:
-  - "recommendedActions": 優先度の高い KW を最大 5 件選び、コンテンツ種別（article / lp / existing-page-update）・理由・月間獲得見込み数・記事/LP 骨子（H1・主要見出し 3 本・CTA の 1〜2 文）を出力。
-  - "doNotTargetKws": KD が高い、または検索意図がサイトのビジネスとミスマッチな KW を最大 3 件挙げて理由を書く。
+  - "recommendedActions": 優先度の高い KW を最大 2 件選び、コンテンツ種別（article / lp / existing-page-update）・理由・月間獲得見込み数・短い記事/LP 骨子を出力。
+  - "doNotTargetKws": KD が高い、または検索意図がサイトのビジネスとミスマッチな KW を最大 1 件挙げて理由を書く。
   - KW データがない場合は contentPlan フィールドは省略してよい。
+- JSON が長くなりすぎる場合は contentPlan / projectedImpact / talkingPoints の順に短くし、summary / actions / topPriority は絶対に欠落させない。
 次の JSON のみ:
 {
   "summary": "全体要約（クライアント向け、平易な日本語。期間と比較期間を日付で明示）",
@@ -167,13 +167,11 @@ export const STAGE4_SYSTEM = `あなたはグロース施策プランナーで�
       "projectedImpact": {
         "ifImplemented": [
           { "horizonWeeks": 4, "sessionsDelta": 500, "confidence": "medium" },
-          { "horizonWeeks": 8, "sessionsDelta": 1200, "confidence": "medium" },
-          { "horizonWeeks": 12, "sessionsDelta": 2000, "confidence": "low" }
+          { "horizonWeeks": 8, "sessionsDelta": 1200, "confidence": "medium" }
         ],
         "ifNotImplemented": [
           { "horizonWeeks": 4, "sessionsDelta": -100, "confidence": "medium" },
-          { "horizonWeeks": 8, "sessionsDelta": -400, "confidence": "medium" },
-          { "horizonWeeks": 12, "sessionsDelta": -900, "confidence": "low" }
+          { "horizonWeeks": 8, "sessionsDelta": -400, "confidence": "medium" }
         ]
       },
       "contentPlan": {

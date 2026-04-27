@@ -59,12 +59,7 @@ export function isStage3(o: unknown): o is Stage3Payload {
 export function isStage4(o: unknown): o is Stage4Payload {
   if (!o || typeof o !== "object") return false;
   const x = o as Stage4Payload;
-  return (
-    typeof x.summary === "string" &&
-    Array.isArray(x.actions) &&
-    x.topPriority != null &&
-    typeof (x.topPriority as { action?: string }).action === "string"
-  );
+  return Array.isArray(x.actions) && x.actions.length > 0;
 }
 
 export function isStage45(o: unknown): o is Stage45Payload {
@@ -82,6 +77,7 @@ const ALLOWED_FACTOR = [
   "ux-clarity",
   "tracking",
   "seasonality-external",
+  "content-gap",
 ] as const;
 
 const ALLOWED_DATA_CERTAINTY: InsightDataCertainty[] = [
@@ -155,9 +151,17 @@ function normalizeProjectionPoint(p: unknown): InsightProjectionPoint | null {
 }
 
 export function normalizeAction(
-  a: InsightActionItem,
+  a: Partial<InsightActionItem>,
   knownFactIds: Set<string> = new Set(),
 ): InsightActionItem {
+  const id = typeof a.id === "string" && a.id.trim() ? a.id : "a1";
+  const hypothesisId = typeof a.hypothesisId === "string" && a.hypothesisId.trim() ? a.hypothesisId : "";
+  const issueId = typeof a.issueId === "string" && a.issueId.trim() ? a.issueId : "";
+  const priority =
+    a.priority === "high" || a.priority === "medium" || a.priority === "low" ? a.priority : "medium";
+  const steps = Array.isArray(a.steps)
+    ? a.steps.filter((s): s is string => typeof s === "string" && s.trim().length > 0).slice(0, 6)
+    : [];
   const type = a.type;
   const allowedTypes: InsightActionItem["type"][] = ["quick-win", "strategic", "structural"];
   const ice = a.ice;
@@ -263,6 +267,17 @@ export function normalizeAction(
 
   return {
     ...a,
+    id,
+    hypothesisId,
+    issueId,
+    title: typeof a.title === "string" && a.title.trim() ? a.title : "優先施策",
+    priority,
+    effort: typeof a.effort === "string" && a.effort.trim() ? a.effort : "M",
+    expectedImpact:
+      typeof a.expectedImpact === "string" && a.expectedImpact.trim()
+        ? a.expectedImpact
+        : "対象 KPI の改善を見込む",
+    steps: steps.length > 0 ? steps : ["対象ページと関連指標を確認する", "改善案を実装する", "7日後に効果を確認する"],
     type: type && (allowedTypes as string[]).includes(type) ? type : undefined,
     ice: normalizedIce,
     targetKpi: normalizedKpi,
@@ -360,5 +375,38 @@ function clamp(n: number, min: number, max: number): number {
 }
 
 export function cleanJsonText(json: string): string {
-  return json.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
+  const trimmed = json.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const source = (fenced?.[1] ?? trimmed).trim();
+  const start = source.search(/[\[{]/);
+  if (start < 0) return source;
+
+  const open = source[start];
+  const close = open === "{" ? "}" : "]";
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < source.length; i += 1) {
+    const ch = source[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+      continue;
+    }
+    if (ch === open) depth += 1;
+    if (ch === close) depth -= 1;
+    if (depth === 0) return source.slice(start, i + 1).trim();
+  }
+
+  return source.slice(start).trim();
 }

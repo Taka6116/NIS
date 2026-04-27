@@ -146,7 +146,8 @@ export type InsightFactorCategory =
   | "authority"
   | "ux-clarity"
   | "tracking"
-  | "seasonality-external";
+  | "seasonality-external"
+  | "content-gap";
 
 /** A5: データ確実性レベル（4 段階 calibration） */
 export type InsightDataCertainty =

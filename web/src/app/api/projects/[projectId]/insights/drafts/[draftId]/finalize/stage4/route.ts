@@ -56,9 +56,25 @@ export async function POST(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     const stack = e instanceof Error ? e.stack : undefined;
+    const diag = e as {
+      stageLabel?: unknown;
+      stopReason?: unknown;
+      rawPreview?: unknown;
+      parseStage?: unknown;
+    };
     console.error("[finalize/stage4] error:", message, stack);
     return Response.json(
-      { error: message, code: e instanceof Error ? e.name : "Error", draftId, detail: stack?.slice(0, 500), status: "failed" },
+      {
+        error: message,
+        code: e instanceof Error ? e.name : "Error",
+        draftId,
+        detail: stack?.slice(0, 500),
+        stage: typeof diag.stageLabel === "string" ? diag.stageLabel : "stage4",
+        stopReason: typeof diag.stopReason === "string" ? diag.stopReason : undefined,
+        parseStage: typeof diag.parseStage === "string" ? diag.parseStage : undefined,
+        rawPreview: typeof diag.rawPreview === "string" ? diag.rawPreview : undefined,
+        status: "failed",
+      },
       { status: 500 },
     );
   }
