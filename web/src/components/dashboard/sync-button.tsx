@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
 export function SyncButton({ projectId }: { projectId: string }) {
   const [state, setState] = useState<"idle" | "running" | "done" | "error">("idle");
@@ -36,18 +37,24 @@ export function SyncButton({ projectId }: { projectId: string }) {
     }
   }
 
+  const running = state === "running";
+
   return (
     <div className="flex flex-col gap-3">
       <button
         onClick={handleSync}
-        disabled={state === "running"}
+        disabled={running}
         className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:opacity-50"
       >
-        <RefreshCw className={`h-4 w-4 ${state === "running" ? "animate-spin" : ""}`} />
-        {state === "running" ? "同期中…" : "データ同期を実行"}
+        {running ? (
+          <LoadingSpinner variant="ring" size="sm" className="text-white" />
+        ) : (
+          <RefreshCw className="h-4 w-4" />
+        )}
+        {running ? "同期中…" : "データ同期を実行"}
       </button>
       {result && (
-        <p className={`text-sm ${state === "error" ? "text-red-400" : "text-emerald-400"}`}>
+        <p className={`flex items-center gap-1.5 text-sm ${state === "error" ? "text-red-400" : "text-emerald-400"}`}>
           {result}
         </p>
       )}

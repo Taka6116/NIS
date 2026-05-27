@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
 type Props = {
   projectId: string;
@@ -12,6 +13,7 @@ type Props = {
 export function InsightShareButton({ projectId, insightSk, initialToken }: Props) {
   const [token, setToken] = useState<string | undefined>(initialToken);
   const [busy, setBusy] = useState(false);
+  const [revoking, setRevoking] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sk = encodeURIComponent(insightSk);
@@ -43,7 +45,7 @@ export function InsightShareButton({ projectId, insightSk, initialToken }: Props
 
   const revoke = useCallback(async () => {
     if (!confirm("共有リンクを無効化しますか？")) return;
-    setBusy(true);
+    setRevoking(true);
     setError(null);
     try {
       const res = await fetch(`/api/projects/${projectId}/insights/${sk}/share`, {
@@ -57,7 +59,7 @@ export function InsightShareButton({ projectId, insightSk, initialToken }: Props
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      setRevoking(false);
     }
   }, [projectId, sk]);
 
@@ -92,22 +94,38 @@ export function InsightShareButton({ projectId, insightSk, initialToken }: Props
           </Button>
           <Button
             variant="outline"
-            className="h-8 rounded-lg border-rose-400/30 px-3 text-xs text-rose-200 hover:bg-rose-500/15"
+            className="h-8 min-w-[8rem] rounded-lg border-rose-400/30 px-3 text-xs text-rose-200 hover:bg-rose-500/15"
             onClick={revoke}
-            disabled={busy}
+            disabled={revoking}
           >
-            {busy ? "…" : "リンクを無効化"}
+            {revoking ? (
+              <>
+                <LoadingSpinner variant="dot" size="xs" />
+                無効化中…
+              </>
+            ) : (
+              "リンクを無効化"
+            )}
           </Button>
         </>
       ) : (
         <Button
           variant="outline"
-          className="gap-1.5 rounded-xl border-sky-400/40 text-sky-100 hover:bg-sky-500/15"
+          className="min-w-[10rem] gap-1.5 rounded-xl border-sky-400/40 text-sky-100 hover:bg-sky-500/15"
           onClick={issueToken}
           disabled={busy}
         >
-          <span aria-hidden>🔗</span>
-          {busy ? "発行中…" : "共有リンクを発行"}
+          {busy ? (
+            <>
+              <LoadingSpinner variant="dot" size="xs" />
+              発行中…
+            </>
+          ) : (
+            <>
+              <span aria-hidden>🔗</span>
+              共有リンクを発行
+            </>
+          )}
         </Button>
       )}
       {error ? <span className="text-[10px] text-rose-300">{error}</span> : null}

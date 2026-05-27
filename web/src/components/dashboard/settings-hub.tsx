@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useState } from "react";
 import type { ProjectRecord } from "@/types/nis";
 
@@ -24,6 +25,7 @@ export function SettingsHub({
 }) {
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [syncPending, setSyncPending] = useState(false);
 
   async function onSave(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -48,10 +50,10 @@ export function SettingsHub({
   }
 
   async function onSync() {
-    setPending(true);
+    setSyncPending(true);
     setMessage(null);
     const res = await fetch(`/api/projects/${project.projectId}/sync`, { method: "POST" });
-    setPending(false);
+    setSyncPending(false);
     if (!res.ok) setMessage("同期に失敗しました。Service Account とプロパティ ID を確認してください。");
     else setMessage("同期ジョブが完了しました。");
   }
@@ -97,8 +99,21 @@ export function SettingsHub({
             </div>
           </div>
           <div className="mt-4 flex flex-wrap gap-3">
-            <Button type="button" variant="secondary" onClick={onSync} disabled={pending || !canEdit}>
-              今すぐ同期
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onSync}
+              disabled={syncPending || pending || !canEdit}
+              className="min-w-[7rem]"
+            >
+              {syncPending ? (
+                <>
+                  <LoadingSpinner variant="ring" size="sm" />
+                  同期中…
+                </>
+              ) : (
+                "今すぐ同期"
+              )}
             </Button>
             <Button type="button" variant="outline" disabled>
               データログ（準備中）
@@ -149,8 +164,15 @@ export function SettingsHub({
             />
           </div>
           <div className="md:col-span-2 flex flex-wrap gap-3">
-            <Button type="submit" disabled={!canEdit || pending}>
-              Validate &amp; Save
+            <Button type="submit" disabled={!canEdit || pending || syncPending} className="min-w-[9rem]">
+              {pending ? (
+                <>
+                  <LoadingSpinner variant="ring" size="sm" />
+                  保存中…
+                </>
+              ) : (
+                "Validate & Save"
+              )}
             </Button>
           </div>
         </form>

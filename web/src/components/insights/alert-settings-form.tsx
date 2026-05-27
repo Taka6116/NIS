@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import type { ProjectAlertConfig } from "@/types/nis";
 
 type Rule = ProjectAlertConfig["rules"][number];
@@ -202,8 +203,15 @@ export function AlertSettingsForm({ projectId, initial }: Props) {
       </Card>
 
       <div className="flex items-center gap-3">
-        <Button className="rounded-xl" onClick={save} disabled={busy}>
-          {busy ? "保存中…" : "保存"}
+        <Button className="min-w-[6rem] rounded-xl" onClick={save} disabled={busy}>
+          {busy ? (
+            <>
+              <LoadingSpinner variant="ring" size="sm" />
+              保存中…
+            </>
+          ) : (
+            "保存"
+          )}
         </Button>
         {msg ? <span className="text-xs text-emerald-300">{msg}</span> : null}
         {error ? <span className="text-xs text-rose-300">エラー: {error}</span> : null}

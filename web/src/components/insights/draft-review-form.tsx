@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import type { InsightIssue } from "@/types/nis";
 
 type Provider = "gemini" | "claude";
@@ -238,8 +239,20 @@ export function DraftReviewForm({
               <option value="claude">Claude (Bedrock)</option>
             </select>
           </div>
-          <Button onClick={submit} disabled={pending} className="rounded-xl">
-            {step === "stage3" ? "仮説を生成中… (1/2)" : step === "stage4" ? "打ち手を生成中… (2/2)" : "打ち手を生成 →"}
+          <Button onClick={submit} disabled={pending} className="min-w-[12rem] rounded-xl">
+            {step === "stage3" ? (
+              <>
+                <LoadingSpinner variant="bar" size="sm" />
+                仮説を生成中… (1/2)
+              </>
+            ) : step === "stage4" ? (
+              <>
+                <LoadingSpinner variant="bar" size="sm" />
+                打ち手を生成中… (2/2)
+              </>
+            ) : (
+              "打ち手を生成 →"
+            )}
           </Button>
         </div>
         {pending ? (

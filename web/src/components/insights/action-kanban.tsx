@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import type { ActionTrackingRecord, InsightActionStatus } from "@/types/nis";
 import Link from "next/link";
 
@@ -165,26 +166,29 @@ export function ActionKanban({ projectId, seeds, initialRows }: Props) {
                     return (
                       <div
                         key={sk}
-                        className="rounded-lg border border-white/10 bg-[#0f141d] p-3 text-xs"
+                        className={`rounded-lg border border-white/10 bg-[#0f141d] p-3 text-xs transition-opacity ${busy ? "opacity-60" : ""}`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-[10px] uppercase tracking-wide text-slate-500">
                             {s.generatedAtIso.slice(0, 10)}
                           </span>
-                          {s.priority ? (
-                            <span
-                              className={
-                                "rounded px-1.5 py-0.5 text-[9px] " +
-                                (s.priority === "high"
-                                  ? "bg-rose-500/20 text-rose-200"
-                                  : s.priority === "medium"
-                                    ? "bg-amber-500/20 text-amber-200"
-                                    : "bg-slate-500/20 text-slate-300")
-                              }
-                            >
-                              {s.priority}
-                            </span>
-                          ) : null}
+                          <div className="flex items-center gap-1.5">
+                            {busy && <LoadingSpinner variant="ring" size="xs" className="text-cyan-400" />}
+                            {s.priority ? (
+                              <span
+                                className={
+                                  "rounded px-1.5 py-0.5 text-[9px] " +
+                                  (s.priority === "high"
+                                    ? "bg-rose-500/20 text-rose-200"
+                                    : s.priority === "medium"
+                                      ? "bg-amber-500/20 text-amber-200"
+                                      : "bg-slate-500/20 text-slate-300")
+                                }
+                              >
+                                {s.priority}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                         <p className="mt-1.5 text-[13px] font-medium text-white">{s.title}</p>
                         {s.issueTitle ? (
@@ -224,11 +228,11 @@ export function ActionKanban({ projectId, seeds, initialRows }: Props) {
                                 />
                                 <div className="mt-1 flex gap-1">
                                   <Button
-                                    className="h-6 rounded px-2 text-[10px]"
+                                    className="h-6 min-w-[4rem] rounded px-2 text-[10px]"
                                     disabled={busy}
                                     onClick={() => saveNote(s, editing.note)}
                                   >
-                                    保存
+                                    {busy ? <LoadingSpinner variant="ring" size="xs" /> : "保存"}
                                   </Button>
                                   <Button
                                     variant="outline"

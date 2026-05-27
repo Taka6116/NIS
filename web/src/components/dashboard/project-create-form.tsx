@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -62,8 +63,15 @@ export function ProjectCreateForm() {
       </div>
       {error ? <p className="md:col-span-2 text-sm text-rose-300">{error}</p> : null}
       <div className="md:col-span-2">
-        <Button type="submit" disabled={pending}>
-          {pending ? "作成中…" : "プロジェクトを作成"}
+        <Button type="submit" disabled={pending} className="min-w-[10rem]">
+          {pending ? (
+            <>
+              <LoadingSpinner variant="ring" size="sm" />
+              作成中…
+            </>
+          ) : (
+            "プロジェクトを作成"
+          )}
         </Button>
       </div>
     </form>

@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Upload } from "lucide-react";
 
 type Props = {
@@ -32,7 +33,11 @@ export function KwUploadZone({ onFiles, uploading }: Props) {
         disabled={uploading}
         onClick={() => inputRef.current?.click()}
       >
-        <Upload className="size-4" />
+        {uploading ? (
+          <LoadingSpinner variant="dot" size="xs" />
+        ) : (
+          <Upload className="size-4" />
+        )}
         {uploading ? "インポート中…" : "CSV インポート"}
       </Button>
 
