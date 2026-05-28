@@ -36,6 +36,15 @@ function isGscQueryRow(r: GscDailyRow): boolean {
   return r.rowType === "query" || r.rowType === undefined;
 }
 
+/**
+ * KPI 集計に使う行を選ぶ。
+ * "kpi" rowType（date 軸のみ）が存在する場合はそれを優先し、sessions 過大計上を防ぐ。
+ * 旧データ（"kpi" 行なし）は "main" にフォールバックする。
+ */
+function isGa4KpiRow(r: Ga4DailyRow): boolean {
+  return r.rowType === "kpi";
+}
+
 function isGa4MainRow(r: Ga4DailyRow): boolean {
   return r.rowType === "main" || r.rowType === undefined;
 }
@@ -95,7 +104,10 @@ function aggregateGsc(rows: GscDailyRow[]) {
 }
 
 function aggregateGa4(rows: Ga4DailyRow[]) {
-  const m = rows.filter(isGa4MainRow);
+  const kpiRows = rows.filter(isGa4KpiRow);
+  // "kpi" 行が存在する場合はそれを使う（pagePath 合算による過大計上なし）
+  // 旧データ（kpi 行なし）は "main" 行にフォールバックするが、sessions が過大計上になる可能性がある
+  const m = kpiRows.length > 0 ? kpiRows : rows.filter(isGa4MainRow);
   let sessions = 0;
   let users = 0;
   let conversions = 0;

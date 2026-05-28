@@ -1,7 +1,8 @@
-import { GetCommand, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { getDynamoClient, isMockDatabase } from "@/lib/dynamodb/client";
 import { mockStore } from "@/lib/dynamodb/mock-store";
 import { tableNames } from "@/lib/dynamodb/tables";
+import { queryUsersByEmail, scanAllPages } from "@/lib/dynamodb/helpers";
 import type { UserRecord, UserRole } from "@/types/nis";
 
 function adminEmails(): Set<string> {
@@ -14,25 +15,26 @@ function adminEmails(): Set<string> {
   );
 }
 
+/**
+ * 新規 OAuth ユーザーのデフォルトロール。
+ * admin メール以外は "viewer" にする。member 昇格は管理者が /admin/users で行う。
+ */
 export function resolveRoleForEmail(email: string | null | undefined): UserRole {
   if (!email) return "viewer";
   if (adminEmails().has(email.toLowerCase())) return "admin";
-  return "member";
+  return "viewer";
 }
 
 export async function getUserByEmail(email: string): Promise<UserRecord | null> {
   if (isMockDatabase()) {
-    return [...mockStore.users.values()].find((u) => u.email.toLowerCase() === email.toLowerCase()) ?? null;
+    return (
+      [...mockStore.users.values()].find((u) => u.email.toLowerCase() === email.toLowerCase()) ?? null
+    );
   }
-  const out = await getDynamoClient().send(
-    new ScanCommand({
-      TableName: tableNames.users,
-      FilterExpression: "email = :e",
-      ExpressionAttributeValues: { ":e": email },
-      Limit: 1,
-    }),
-  );
-  const item = out.Items?.[0] as UserRecord | undefined;
+  // Email GSI がある場合は Query、ない場合は全件 Scan にフォールバック。
+  // 本番では EmailIndex（pk: email）GSI の作成を推奨。
+  const items = await queryUsersByEmail(tableNames.users, email);
+  const item = items[0] as UserRecord | undefined;
   return item ?? null;
 }
 
@@ -68,8 +70,7 @@ export async function listUsers(): Promise<UserRecord[]> {
   if (isMockDatabase()) {
     return [...mockStore.users.values()];
   }
-  const out = await getDynamoClient().send(new ScanCommand({ TableName: tableNames.users }));
-  return (out.Items ?? []) as UserRecord[];
+  return scanAllPages<UserRecord>({ TableName: tableNames.users });
 }
 
 export async function getUser(userId: string): Promise<UserRecord | null> {

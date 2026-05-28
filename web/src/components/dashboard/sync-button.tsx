@@ -4,13 +4,29 @@ import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
+type SourceStatus = "ok" | "skipped_missing_config" | "failed";
+
+function statusLabel(status: SourceStatus, count: number, error?: string): string {
+  if (status === "ok") return `${count} 行`;
+  if (status === "skipped_missing_config") return `スキップ（未設定）`;
+  return `エラー${error ? `: ${error.slice(0, 60)}` : ""}`;
+}
+
+function sourceColor(status: SourceStatus) {
+  if (status === "ok") return "text-emerald-400";
+  if (status === "skipped_missing_config") return "text-amber-400";
+  return "text-rose-400";
+}
+
 export function SyncButton({ projectId }: { projectId: string }) {
   const [state, setState] = useState<"idle" | "running" | "done" | "error">("idle");
-  const [result, setResult] = useState<string>("");
+  const [lines, setLines] = useState<{ label: string; text: string; status: SourceStatus }[]>([]);
+  const [errorMsg, setErrorMsg] = useState<string>("");
 
   async function handleSync() {
     setState("running");
-    setResult("");
+    setLines([]);
+    setErrorMsg("");
     try {
       const res = await fetch(`/api/projects/${projectId}/sync`, {
         method: "POST",
@@ -18,22 +34,38 @@ export function SyncButton({ projectId }: { projectId: string }) {
       const body = await res.json();
       if (!res.ok || !body.ok) {
         setState("error");
-        setResult(body.error ?? "同期に失敗しました");
+        setErrorMsg(body.error ?? "同期に失敗しました");
         return;
       }
       const r = body.result;
       setState("done");
 
-      let clarityMsg = `Clarity: ${r.clarityCount} 行`;
-      if (r.claritySkipped) {
-        clarityMsg = `Clarity: スキップ（${r.claritySkipReason ?? "未設定"}）`;
-      } else if (r.clarityError) {
-        clarityMsg = `Clarity: エラー — ${r.clarityError}`;
-      }
-      setResult(`GSC: ${r.gscCount} 行 / GA4: ${r.ga4Count} 行 / ${clarityMsg}`);
+      const clarityStatus: SourceStatus = r.claritySkipped
+        ? "skipped_missing_config"
+        : (r.clarityStatus ?? (r.clarityError ? "failed" : "ok"));
+
+      setLines([
+        {
+          label: "GSC",
+          text: statusLabel(r.gscStatus ?? "ok", r.gscCount, r.gscError),
+          status: r.gscStatus ?? "ok",
+        },
+        {
+          label: "GA4",
+          text: statusLabel(r.ga4Status ?? "ok", r.ga4Count, r.ga4Error),
+          status: r.ga4Status ?? "ok",
+        },
+        {
+          label: "Clarity",
+          text: clarityStatus === "skipped_missing_config"
+            ? `スキップ（${r.claritySkipReason ?? "未設定"}）`
+            : statusLabel(clarityStatus, r.clarityCount, r.clarityError),
+          status: clarityStatus,
+        },
+      ]);
     } catch (e) {
       setState("error");
-      setResult(e instanceof Error ? e.message : "Network error");
+      setErrorMsg(e instanceof Error ? e.message : "Network error");
     }
   }
 
@@ -53,10 +85,18 @@ export function SyncButton({ projectId }: { projectId: string }) {
         )}
         {running ? "同期中…" : "データ同期を実行"}
       </button>
-      {result && (
-        <p className={`flex items-center gap-1.5 text-sm ${state === "error" ? "text-red-400" : "text-emerald-400"}`}>
-          {result}
-        </p>
+      {state === "error" && errorMsg && (
+        <p className="text-sm text-rose-400">{errorMsg}</p>
+      )}
+      {lines.length > 0 && (
+        <ul className="space-y-1 text-xs">
+          {lines.map((l) => (
+            <li key={l.label} className={`flex gap-2 ${sourceColor(l.status)}`}>
+              <span className="w-12 font-semibold">{l.label}:</span>
+              <span>{l.text}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

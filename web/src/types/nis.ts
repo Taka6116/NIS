@@ -36,8 +36,14 @@ export type GscDailyRow = {
   position: number;
 };
 
-/** GA4: メイン（ページ×流入）、チャネル×LP、デバイス×国 */
-export type Ga4RowType = "main" | "channel" | "deviceGeo";
+/**
+ * GA4 行種別。
+ * - "kpi": date 軸のみ。総KPI集計に使用する。sessions の過大計上を防ぐ。
+ * - "main": date×pagePath×sourceMedium。ページ別レポート用。KPI集計には使わない。
+ * - "channel": date×channelGroup×landingPage。チャネル別レポート用。
+ * - "deviceGeo": date×deviceCategory×country。デバイス・国別レポート用。
+ */
+export type Ga4RowType = "kpi" | "main" | "channel" | "deviceGeo";
 
 export type Ga4DailyRow = {
   projectId: string;
@@ -68,7 +74,19 @@ export type ClarityRowKind = "summary" | "page" | "referrer" | "device" | "geo";
 export type ClarityDailyRow = {
   projectId: string;
   sk: string;
+  /**
+   * date はスナップショット取得日（同期実行日）。
+   * Clarity の project-live-insights は過去 numOfDays 日間の集計であり、
+   * GA4/GSC のような日次確定データではない。
+   * sourceWindowDays フィールドで何日間のスナップショットかを示す。
+   */
   date: string;
+  /**
+   * 何日間のライブウィンドウのスナップショットか（通常 1〜3）。
+   * 未設定は旧データ（= 3 日と推定）。
+   * これが存在することで、GA4/GSC の日次履歴データと区別できる。
+   */
+  sourceWindowDays?: number;
   rowKind?: ClarityRowKind;
   url?: string;
   /** rowKind referrer のとき */

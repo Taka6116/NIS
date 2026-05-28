@@ -103,6 +103,9 @@ export async function fetchClarityLiveInsights(opts: {
     projectId: opts.projectId,
     sk: `${today}#(project-summary)`,
     date: today,
+    // sourceWindowDays: このデータが「同期実行日から遡った N 日間のライブ集計」であることを示す。
+    // GA4/GSC の日次確定データとは異なるので、集計時に混同しないこと。
+    sourceWindowDays: opts.numOfDays,
     rowKind: "summary",
     url: "(project-summary)",
     traffic: totalSessions,

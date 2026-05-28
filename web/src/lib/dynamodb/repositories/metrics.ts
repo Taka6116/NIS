@@ -1,11 +1,17 @@
-import { BatchWriteCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
-import { getDynamoClient, isMockDatabase } from "@/lib/dynamodb/client";
+import { isMockDatabase } from "@/lib/dynamodb/client";
 import { mockStore } from "@/lib/dynamodb/mock-store";
 import { tableNames } from "@/lib/dynamodb/tables";
+import { batchWriteWithRetry, queryAllPages } from "@/lib/dynamodb/helpers";
 import type { ClarityDailyRow, Ga4DailyRow, GscDailyRow } from "@/types/nis";
 
 function gscKey(projectId: string, sk: string) {
   return `${projectId}::${sk}`;
+}
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
 }
 
 export async function putGscRows(rows: GscDailyRow[]): Promise<void> {
@@ -16,17 +22,14 @@ export async function putGscRows(rows: GscDailyRow[]): Promise<void> {
     }
     return;
   }
-  const chunks = chunk(rows, 25);
-  for (const part of chunks) {
-    await getDynamoClient().send(
-      new BatchWriteCommand({
-        RequestItems: {
-          [tableNames.gscDaily]: part.map((r) => ({
-            PutRequest: { Item: { ...r } },
-          })),
-        },
-      }),
-    );
+  for (const part of chunk(rows, 25)) {
+    await batchWriteWithRetry({
+      RequestItems: {
+        [tableNames.gscDaily]: part.map((r) => ({
+          PutRequest: { Item: { ...r } },
+        })),
+      },
+    });
   }
 }
 
@@ -38,17 +41,14 @@ export async function putGa4Rows(rows: Ga4DailyRow[]): Promise<void> {
     }
     return;
   }
-  const chunks = chunk(rows, 25);
-  for (const part of chunks) {
-    await getDynamoClient().send(
-      new BatchWriteCommand({
-        RequestItems: {
-          [tableNames.ga4Daily]: part.map((r) => ({
-            PutRequest: { Item: { ...r } },
-          })),
-        },
-      }),
-    );
+  for (const part of chunk(rows, 25)) {
+    await batchWriteWithRetry({
+      RequestItems: {
+        [tableNames.ga4Daily]: part.map((r) => ({
+          PutRequest: { Item: { ...r } },
+        })),
+      },
+    });
   }
 }
 
@@ -60,24 +60,15 @@ export async function putClarityRows(rows: ClarityDailyRow[]): Promise<void> {
     }
     return;
   }
-  const chunks = chunk(rows, 25);
-  for (const part of chunks) {
-    await getDynamoClient().send(
-      new BatchWriteCommand({
-        RequestItems: {
-          [tableNames.clarityDaily]: part.map((r) => ({
-            PutRequest: { Item: { ...r } },
-          })),
-        },
-      }),
-    );
+  for (const part of chunk(rows, 25)) {
+    await batchWriteWithRetry({
+      RequestItems: {
+        [tableNames.clarityDaily]: part.map((r) => ({
+          PutRequest: { Item: { ...r } },
+        })),
+      },
+    });
   }
-}
-
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
 }
 
 export async function queryGscByProjectAndDatePrefix(
@@ -85,43 +76,55 @@ export async function queryGscByProjectAndDatePrefix(
   datePrefix: string,
 ): Promise<GscDailyRow[]> {
   if (isMockDatabase()) {
-    return [...mockStore.gsc.values()].filter((r) => r.projectId === projectId && r.sk.startsWith(datePrefix));
+    return [...mockStore.gsc.values()].filter(
+      (r) => r.projectId === projectId && r.sk.startsWith(datePrefix),
+    );
   }
-  const out = await getDynamoClient().send(
-    new QueryCommand({
-      TableName: tableNames.gscDaily,
-      KeyConditionExpression: "projectId = :p AND begins_with(#sk, :d)",
-      ExpressionAttributeNames: { "#sk": "sk" },
-      ExpressionAttributeValues: { ":p": projectId, ":d": datePrefix },
-    }),
-  );
-  return (out.Items ?? []) as GscDailyRow[];
+  return queryAllPages<GscDailyRow>({
+    TableName: tableNames.gscDaily,
+    KeyConditionExpression: "projectId = :p AND begins_with(#sk, :d)",
+    ExpressionAttributeNames: { "#sk": "sk" },
+    ExpressionAttributeValues: { ":p": projectId, ":d": datePrefix },
+  });
 }
 
 export async function queryGa4ByProject(projectId: string): Promise<Ga4DailyRow[]> {
   if (isMockDatabase()) {
     return [...mockStore.ga4.values()].filter((r) => r.projectId === projectId);
   }
-  const out = await getDynamoClient().send(
-    new QueryCommand({
-      TableName: tableNames.ga4Daily,
-      KeyConditionExpression: "projectId = :p",
-      ExpressionAttributeValues: { ":p": projectId },
-    }),
-  );
-  return (out.Items ?? []) as Ga4DailyRow[];
+  return queryAllPages<Ga4DailyRow>({
+    TableName: tableNames.ga4Daily,
+    KeyConditionExpression: "projectId = :p",
+    ExpressionAttributeValues: { ":p": projectId },
+  });
+}
+
+export async function queryGa4ByProjectAndDateRange(
+  projectId: string,
+  start: string,
+  end: string,
+): Promise<Ga4DailyRow[]> {
+  if (isMockDatabase()) {
+    return [...mockStore.ga4.values()].filter(
+      (r) => r.projectId === projectId && r.date >= start && r.date <= end,
+    );
+  }
+  return queryAllPages<Ga4DailyRow>({
+    TableName: tableNames.ga4Daily,
+    KeyConditionExpression: "projectId = :p AND #sk BETWEEN :s AND :e",
+    ExpressionAttributeNames: { "#sk": "sk" },
+    ExpressionAttributeValues: { ":p": projectId, ":s": start, ":e": `${end}~` },
+  });
 }
 
 export async function queryClarityByProject(projectId: string): Promise<ClarityDailyRow[]> {
   if (isMockDatabase()) {
     return [...mockStore.clarity.values()].filter((r) => r.projectId === projectId);
   }
-  const out = await getDynamoClient().send(
-    new QueryCommand({
-      TableName: tableNames.clarityDaily,
-      KeyConditionExpression: "projectId = :p",
-      ExpressionAttributeValues: { ":p": projectId },
-    }),
-  );
-  return (out.Items ?? []) as ClarityDailyRow[];
+  return queryAllPages<ClarityDailyRow>({
+    TableName: tableNames.clarityDaily,
+    KeyConditionExpression: "projectId = :p",
+    ExpressionAttributeValues: { ":p": projectId },
+  });
 }
+

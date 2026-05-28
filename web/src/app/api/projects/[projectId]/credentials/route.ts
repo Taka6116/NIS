@@ -1,5 +1,5 @@
 import { getProject, updateProjectCredentials } from "@/lib/dynamodb/repositories/projects";
-import { getSessionUserRole, requireSession, isAuthError } from "@/lib/rbac";
+import { requireProjectAccess, isAuthError } from "@/lib/rbac";
 import { z } from "zod";
 
 const schema = z.object({
@@ -11,15 +11,15 @@ const schema = z.object({
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ projectId: string }> }) {
-  try { await requireSession(); } catch (e) {
+  const { projectId } = await ctx.params;
+  try {
+    // credentials 更新は admin 限定
+    await requireProjectAccess(projectId, ["admin"]);
+  } catch (e) {
     if (isAuthError(e)) return Response.json({ error: e.message }, { status: e.status });
     throw e;
   }
-  const meta = await getSessionUserRole();
-  if (!meta || meta.role === "viewer") {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
-  }
-  const { projectId } = await ctx.params;
+
   const project = await getProject(projectId);
   if (!project) return Response.json({ error: "Not found" }, { status: 404 });
 

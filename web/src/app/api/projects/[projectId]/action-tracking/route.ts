@@ -1,4 +1,4 @@
-import { getSessionUserRole, requireSession, isAuthError } from "@/lib/rbac";
+import { requireProjectAccess, isAuthError } from "@/lib/rbac";
 import {
   buildTrackingRecord,
   listActionTracking,
@@ -7,13 +7,13 @@ import {
 import type { InsightActionStatus } from "@/types/nis";
 
 export async function GET(_req: Request, ctx: { params: Promise<{ projectId: string }> }) {
+  const { projectId } = await ctx.params;
   try {
-    await requireSession();
+    await requireProjectAccess(projectId, ["viewer", "member", "admin"]);
   } catch (e) {
     if (isAuthError(e)) return Response.json({ error: e.message }, { status: e.status });
     throw e;
   }
-  const { projectId } = await ctx.params;
   const rows = await listActionTracking(projectId);
   return Response.json({ rows });
 }
@@ -21,17 +21,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
 const ALLOWED: InsightActionStatus[] = ["todo", "in-progress", "done", "rejected"];
 
 export async function POST(req: Request, ctx: { params: Promise<{ projectId: string }> }) {
+  const { projectId } = await ctx.params;
+  let meta: { email: string; role: string };
   try {
-    await requireSession();
+    meta = await requireProjectAccess(projectId, ["member", "admin"]);
   } catch (e) {
     if (isAuthError(e)) return Response.json({ error: e.message }, { status: e.status });
     throw e;
   }
-  const meta = await getSessionUserRole();
-  if (!meta || (meta.role !== "admin" && meta.role !== "member")) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
-  }
-  const { projectId } = await ctx.params;
   let body: Record<string, unknown>;
   try {
     body = (await req.json()) as Record<string, unknown>;

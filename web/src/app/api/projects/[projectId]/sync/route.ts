@@ -1,16 +1,15 @@
-import { getSessionUserRole, requireSession, isAuthError } from "@/lib/rbac";
+import { requireProjectAccess, isAuthError } from "@/lib/rbac";
 import { syncProjectData } from "@/lib/sync/run-sync";
 
 export async function POST(_req: Request, ctx: { params: Promise<{ projectId: string }> }) {
-  try { await requireSession(); } catch (e) {
+  const { projectId } = await ctx.params;
+  try {
+    // member 以上かつ対象 project へのアクセス権を確認
+    await requireProjectAccess(projectId, ["member", "admin"]);
+  } catch (e) {
     if (isAuthError(e)) return Response.json({ error: e.message }, { status: e.status });
     throw e;
   }
-  const meta = await getSessionUserRole();
-  if (!meta || meta.role === "viewer") {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
-  }
-  const { projectId } = await ctx.params;
   try {
     const result = await syncProjectData(projectId, { days: 28 });
     return Response.json({ ok: true, result });

@@ -1,4 +1,5 @@
-import { GetCommand, PutCommand, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { GetCommand, PutCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { scanAllPages } from "@/lib/dynamodb/helpers";
 import { v4 as uuid } from "uuid";
 import { getDynamoClient, isMockDatabase } from "@/lib/dynamodb/client";
 import { mockStore } from "@/lib/dynamodb/mock-store";
@@ -15,15 +16,12 @@ export async function listProjects(): Promise<ProjectRecord[]> {
       (a, b) => b.createdAt.localeCompare(a.createdAt),
     );
   }
-  const out = await getDynamoClient().send(
-    new ScanCommand({
-      TableName: tableNames.projects,
-      ProjectionExpression:
-        "projectId, projectName, #d, gscPropertyUrl, ga4PropertyId, clarityProjectId, lastSyncAt, lastGscSyncAt, lastGa4SyncAt, lastClaritySyncAt, createdAt, updatedAt",
-      ExpressionAttributeNames: { "#d": "domain" },
-    }),
-  );
-  const items = (out.Items ?? []) as ProjectRecord[];
+  const items = await scanAllPages<ProjectRecord>({
+    TableName: tableNames.projects,
+    ProjectionExpression:
+      "projectId, projectName, #d, gscPropertyUrl, ga4PropertyId, clarityProjectId, lastSyncAt, lastGscSyncAt, lastGa4SyncAt, lastClaritySyncAt, createdAt, updatedAt",
+    ExpressionAttributeNames: { "#d": "domain" },
+  });
   return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 

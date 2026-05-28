@@ -4,7 +4,7 @@ import {
   type InsightSegmentInput,
   type InsightWindowInput,
 } from "@/lib/insights/run-generate";
-import { getSessionUserRole, requireSession, isAuthError } from "@/lib/rbac";
+import { requireProjectAccess, isAuthError } from "@/lib/rbac";
 
 function parseProvider(body: unknown): InsightProvider {
   if (!body || typeof body !== "object") return "gemini";
@@ -40,17 +40,13 @@ function parseSegment(body: unknown): InsightSegmentInput | undefined {
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ projectId: string }> }) {
+  const { projectId } = await ctx.params;
   try {
-    await requireSession();
+    await requireProjectAccess(projectId, ["member", "admin"]);
   } catch (e) {
     if (isAuthError(e)) return Response.json({ error: e.message }, { status: e.status });
     throw e;
   }
-  const meta = await getSessionUserRole();
-  if (!meta || (meta.role !== "admin" && meta.role !== "member")) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
-  }
-  const { projectId } = await ctx.params;
   let provider: InsightProvider = "gemini";
   let windowInput: InsightWindowInput | undefined;
   let segment: InsightSegmentInput | undefined;

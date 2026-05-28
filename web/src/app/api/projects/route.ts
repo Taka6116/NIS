@@ -1,5 +1,5 @@
 import { createProject, listProjects } from "@/lib/dynamodb/repositories/projects";
-import { requireSession, isAuthError } from "@/lib/rbac";
+import { requireSession, requireAdmin, isAuthError } from "@/lib/rbac";
 import { z } from "zod";
 
 const createSchema = z.object({
@@ -29,8 +29,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  // プロジェクト作成は admin 限定
   try {
-    await requireSession();
+    await requireAdmin();
   } catch (e) {
     if (isAuthError(e)) return Response.json({ error: e.message }, { status: e.status });
     throw e;

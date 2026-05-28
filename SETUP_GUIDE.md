@@ -207,10 +207,34 @@ AWS アカウントがない場合は https://aws.amazon.com/ で作成してく
         "dynamodb:Query",
         "dynamodb:Scan",
         "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
         "dynamodb:BatchWriteItem",
         "dynamodb:BatchGetItem"
       ],
-      "Resource": "arn:aws:dynamodb:ap-northeast-1:*:table/nis-*"
+      "Resource": [
+        "arn:aws:dynamodb:ap-northeast-1:*:table/nis-*",
+        "arn:aws:dynamodb:ap-northeast-1:*:table/nis-*/index/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::nis-kw-datasets",
+        "arn:aws:s3:::nis-kw-datasets/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel"
+      ],
+      "Resource": "*"
     }
   ]
 }
@@ -220,60 +244,102 @@ AWS アカウントがない場合は https://aws.amazon.com/ で作成してく
 
 ### 7-3. DynamoDB テーブル作成
 
-AWS Console → **DynamoDB** → リージョン `ap-northeast-1`（東京）で以下6テーブルを作成:
+AWS Console → **DynamoDB** → リージョン `ap-northeast-1`（東京）で以下のテーブルをすべて作成:
 
-| テーブル名 | Partition Key (PK) | Sort Key (SK) | 課金モード |
-|---|---|---|---|
-| `nis-projects` | `projectId` (S) | ― | オンデマンド |
-| `nis-gsc-daily` | `projectId` (S) | `sk` (S) | オンデマンド |
-| `nis-ga4-daily` | `projectId` (S) | `sk` (S) | オンデマンド |
-| `nis-clarity-daily` | `projectId` (S) | `sk` (S) | オンデマンド |
-| `nis-insights` | `projectId` (S) | `sk` (S) | オンデマンド |
-| `nis-users` | `userId` (S) | ― | オンデマンド |
+| テーブル名 | Partition Key | Sort Key | TTL 属性 | 備考 |
+|---|---|---|---|---|
+| `nis-projects` | `projectId` (S) | ― | ― | プロジェクト設定 |
+| `nis-gsc-daily` | `projectId` (S) | `sk` (S) | ― | GSC 日次データ |
+| `nis-ga4-daily` | `projectId` (S) | `sk` (S) | ― | GA4 日次データ |
+| `nis-clarity-daily` | `projectId` (S) | `sk` (S) | ― | Clarity スナップショット |
+| `nis-insights` | `projectId` (S) | `sk` (S) | `expiresAt` | AI インサイト（Draft は TTL 付き） |
+| `nis-users` | `userId` (S) | ― | ― | ユーザー管理 |
+| `nis-action-tracking` | `projectId` (S) | `sk` (S) | ― | 打ち手トラッキング (B1) |
+| `nis-project-alerts` | `projectId` (S) | `sk` (S) | ― | アラート設定 (B8) |
+| `nis-insight-shares` | `projectId` (S) | `sk` (S) | ― | 共有トークン (B7) |
 
-> **課金モード**: すべて「オンデマンド」を選択（低トラフィック時はほぼ無料）  
-> **Sort Key**: `nis-projects` と `nis-users` 以外はすべて `sk` という名前の Sort Key が必要
+> **課金モード**: すべて「オンデマンド（PAY_PER_REQUEST）」を選択  
+> **TTL**: `nis-insights` テーブルに TTL 属性 `expiresAt`（epoch seconds）を設定する
 
-### 7-4. AWS CLI で一括作成する場合（任意）
+#### GSI 推奨設定（パフォーマンス改善）
+
+`nis-users` テーブルに Email による検索用 GSI を追加することを推奨:
+
+| テーブル | GSI 名 | Partition Key |
+|---|---|---|
+| `nis-users` | `EmailIndex` | `email` (S) |
+
+GSI がない場合はフルスキャンにフォールバックしますが、ユーザー数が増えるにつれて低速になります。
+
+### 7-4. S3 バケット作成
+
+キーワードデータセット（Ahrefs CSV）の保存に使用:
+
+| バケット名 | 用途 |
+|---|---|
+| `nis-kw-datasets` | キーワード CSV ストレージ |
 
 ```bash
-aws dynamodb create-table --table-name nis-projects \
-  --attribute-definitions AttributeName=projectId,AttributeType=S \
-  --key-schema AttributeName=projectId,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST --region ap-northeast-1
-
-aws dynamodb create-table --table-name nis-gsc-daily \
-  --attribute-definitions AttributeName=projectId,AttributeType=S AttributeName=sk,AttributeType=S \
-  --key-schema AttributeName=projectId,KeyType=HASH AttributeName=sk,KeyType=RANGE \
-  --billing-mode PAY_PER_REQUEST --region ap-northeast-1
-
-aws dynamodb create-table --table-name nis-ga4-daily \
-  --attribute-definitions AttributeName=projectId,AttributeType=S AttributeName=sk,AttributeType=S \
-  --key-schema AttributeName=projectId,KeyType=HASH AttributeName=sk,KeyType=RANGE \
-  --billing-mode PAY_PER_REQUEST --region ap-northeast-1
-
-aws dynamodb create-table --table-name nis-clarity-daily \
-  --attribute-definitions AttributeName=projectId,AttributeType=S AttributeName=sk,AttributeType=S \
-  --key-schema AttributeName=projectId,KeyType=HASH AttributeName=sk,KeyType=RANGE \
-  --billing-mode PAY_PER_REQUEST --region ap-northeast-1
-
-aws dynamodb create-table --table-name nis-insights \
-  --attribute-definitions AttributeName=projectId,AttributeType=S AttributeName=sk,AttributeType=S \
-  --key-schema AttributeName=projectId,KeyType=HASH AttributeName=sk,KeyType=RANGE \
-  --billing-mode PAY_PER_REQUEST --region ap-northeast-1
-
-aws dynamodb create-table --table-name nis-users \
-  --attribute-definitions AttributeName=userId,AttributeType=S \
-  --key-schema AttributeName=userId,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST --region ap-northeast-1
+aws s3api create-bucket \
+  --bucket nis-kw-datasets \
+  --region ap-northeast-1 \
+  --create-bucket-configuration LocationConstraint=ap-northeast-1
 ```
 
-### 7-5. 環境変数に設定
+### 7-5. AWS CLI で DynamoDB テーブルを一括作成する場合（任意）
+
+```bash
+for TABLE in nis-projects nis-users; do
+  aws dynamodb create-table --table-name $TABLE \
+    --attribute-definitions AttributeName=projectId,AttributeType=S \
+    --key-schema AttributeName=projectId,KeyType=HASH \
+    --billing-mode PAY_PER_REQUEST --region ap-northeast-1
+done
+
+# projectId + sk 構造のテーブル
+for TABLE in nis-gsc-daily nis-ga4-daily nis-clarity-daily nis-insights nis-action-tracking nis-project-alerts nis-insight-shares; do
+  aws dynamodb create-table --table-name $TABLE \
+    --attribute-definitions \
+      AttributeName=projectId,AttributeType=S \
+      AttributeName=sk,AttributeType=S \
+    --key-schema \
+      AttributeName=projectId,KeyType=HASH \
+      AttributeName=sk,KeyType=RANGE \
+    --billing-mode PAY_PER_REQUEST --region ap-northeast-1
+done
+
+# nis-users だけは userId がPK
+aws dynamodb create-table --table-name nis-users \
+  --attribute-definitions AttributeName=userId,AttributeType=S AttributeName=email,AttributeType=S \
+  --key-schema AttributeName=userId,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST --region ap-northeast-1 \
+  --global-secondary-indexes '[{
+    "IndexName":"EmailIndex",
+    "KeySchema":[{"AttributeName":"email","KeyType":"HASH"}],
+    "Projection":{"ProjectionType":"ALL"}
+  }]'
+
+# nis-insights の TTL 設定
+aws dynamodb update-time-to-live \
+  --table-name nis-insights \
+  --time-to-live-specification Enabled=true,AttributeName=expiresAt \
+  --region ap-northeast-1
+```
+
+### 7-6. 環境変数に設定
 
 ```env
 AWS_REGION=ap-northeast-1
 AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=xxxxx...
+
+# S3
+NIS_S3_BUCKET_KW_DATASETS=nis-kw-datasets
+
+# 追加テーブル（デフォルト名と変える場合のみ）
+# NIS_TABLE_ACTION_TRACKING=nis-action-tracking
+# NIS_TABLE_PROJECT_ALERTS=nis-project-alerts
+# NIS_TABLE_INSIGHT_SHARES=nis-insight-shares
 ```
 
 この時点で `.env.local` の `NIS_USE_MOCK_DB=1` をコメントアウトすると実際の DynamoDB に接続します。
@@ -325,6 +391,10 @@ Vercel ダッシュボード → プロジェクト → **Settings** → **Envir
 | `CRON_SECRET` | 任意のランダム文字列（32文字以上推奨） | ✅ |
 | `SLACK_WEBHOOK_URL` | Step 10 で取得 | ⬜ 任意 |
 | `NIS_ADMIN_EMAILS` | 管理者メールアドレス（カンマ区切り） | ✅ |
+| `NIS_S3_BUCKET_KW_DATASETS` | `nis-kw-datasets`（Step 7-4 で作成） | ✅ |
+| `NIS_TABLE_ACTION_TRACKING` | `nis-action-tracking`（デフォルト変える場合のみ） | ⬜ 任意 |
+| `NIS_TABLE_PROJECT_ALERTS` | `nis-project-alerts`（デフォルト変える場合のみ） | ⬜ 任意 |
+| `NIS_TABLE_INSIGHT_SHARES` | `nis-insight-shares`（デフォルト変える場合のみ） | ⬜ 任意 |
 
 > `NEXTAUTH_SECRET` の生成:
 > ```bash
